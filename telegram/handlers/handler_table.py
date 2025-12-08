@@ -1,3 +1,4 @@
+import pprint
 import re
 import logging
 from typing import List, Dict, Optional, Tuple
@@ -5,6 +6,7 @@ from typing import List, Dict, Optional, Tuple
 from aiogram import Router, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
+from app.services.utils import contains_restricted_emails
 from config import Config
 from app.services.fsm import state_manager
 from app.services.forms import is_form
@@ -24,7 +26,7 @@ async def handle_table_menu(table_id: str, user_id: str, message: Message = None
     """
     logger.info(f"Начало обработки меню для table_id={table_id}")
 
-    table_data = await fetch_table(table_id)
+    table_data = await fetch_table(table_id, app='HR')
 
     if not table_data:
         logger.warning(f"Не удалось загрузить данные для table_id={table_id}")
@@ -45,6 +47,7 @@ async def handle_table_menu(table_id: str, user_id: str, message: Message = None
         logger.info(f"Таблица {table_id} - обычное меню")
 
         content_part = await process_content_part(table_data)
+
         keyboard = await create_menu_keyboard(table_data, table_id, user_id=user_id)
 
         if 'parse_mode' not in content_part:
@@ -221,14 +224,14 @@ async def process_content_callback(callback_query: types.CallbackQuery):
         await callback_query.answer("Ошибка загрузки контента", show_alert=True)
 
 
-async def handle_content_button(table_id: str, row_id: str) -> Tuple[Dict, Optional[InlineKeyboardMarkup]]:
+async def handle_content_button(table_id: str, row_id: str, should_post_back: bool = True) -> Tuple[Dict, Optional[InlineKeyboardMarkup]]:
     """
     Обрабатывает нажатие на кнопку контента
     :return: Кортеж (контент, клавиатура "Назад")
     """
     logger.info(f"Обработка контента для table_id={table_id}, row_id={row_id}")
 
-    table_data = await fetch_table(table_id)
+    table_data = await fetch_table(table_id, app="HR")
     if not table_data:
         logger.error(f"Ошибка загрузки данных таблицы {table_id}")
         return {"text": "Ошибка загрузки контента"}, None
@@ -245,6 +248,14 @@ async def handle_content_button(table_id: str, row_id: str) -> Tuple[Dict, Optio
     if row.get('Button_content'):
         content.update(prepare_telegram_message(row['Button_content']))
         logger.info("Контент подготовлен")
+
+        # Проверяем наличие email с доменами .ru
+        if not should_post_back:
+            content_text = content.get('text', '')
+            if contains_restricted_emails(content_text):
+                # Если содержит персональные данные и это возврат назад - не постим
+                logger.info("Контент содержит персональные данные, не постим в чат при возврате назад")
+                content = {'text': ''}  # Пустой контент
 
     # Создаем клавиатуру "Назад" (теперь без параметров)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[

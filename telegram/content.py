@@ -1,3 +1,4 @@
+import pprint
 import re
 import html
 import logging
@@ -67,15 +68,15 @@ def extract_filename_from_html(html_content: str) -> str:
 
 async def process_content_part(table_data: List[Dict]) -> Dict:
     """Обрабатывает контентную часть (Info)"""
-    logger.info("Поиск контентной части (Info) в данных таблицы")
+    logger.info(f"Поиск контентной части (Info) в данных таблицы. Количество строк: {len(table_data)}")
 
     for row in table_data:
         if row.get('Name') == 'Info' and row.get('Content'):
-            logger.info("Найдена строка с контентом (Info)")
+            logger.info(f"Найдена строка с контентом (Info). Content: {row['Content'][:20]}...")
             return prepare_telegram_message(row['Content'])
 
-    logger.info("Строка с контентом (Info) не найдена")
-    return {"text": ""}
+    logger.warning("Строка с контентом (Info) не найдена!")
+    return {"text": "Главное меню"}
 
 
 def prepare_telegram_message(markdown_content: str) -> Dict[str, str]:

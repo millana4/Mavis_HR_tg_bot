@@ -11,7 +11,7 @@ from telegram.content import prepare_telegram_message
 
 logger = logging.getLogger(__name__)
 
-sending_time = time(11, 00)
+sending_time = time(14, 16)
 
 class PulseSender:
     """Отправляет пульс-опросы пользователям"""
@@ -131,6 +131,7 @@ class PulseSender:
             logger.error(f"Ошибка получения контента опросов: {e}")
             return {}
 
+
     async def _get_pulse_admins(self) -> List[Dict]:
         """
         Получает список админов с правами Pulse_admin
@@ -187,6 +188,7 @@ class PulseSender:
             logger.error(f"Ошибка получения админов: {e}")
             return []
 
+
     async def _get_user_messenger_id(self, snils: str) -> Optional[str]:
         """
         Получает ID_messenger пользователя по СНИЛС
@@ -210,6 +212,7 @@ class PulseSender:
         except Exception as e:
             logger.error(f"Ошибка получения ID_messenger для {snils}: {e}")
             return None
+
 
     async def _send_single_pulse(self, task: Dict, poll_content: Dict[str, Dict]) -> bool:
         """Отправляет один пульс-опрос пользователю"""

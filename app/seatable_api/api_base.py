@@ -97,6 +97,9 @@ async def get_base_token(app='HR') -> Optional[Dict]:
                 if app == 'USER':
                     _token_user_cache["token_data"] = token_data
                     _token_user_cache["timestamp"] = now
+                elif app == 'PULSE':
+                    _token_pulse_cache["token_data"] = token_data
+                    _token_pulse_cache["timestamp"] = now
                 else:
                     _token_app_cache["token_data"] = token_data
                     _token_app_cache["timestamp"] = now
@@ -123,7 +126,7 @@ async def fetch_table(table_id: str = '0000', app: str = "HR") -> List[Dict]:
     elif app == 'PULSE':
         token_data = await get_base_token('PULSE')
     else:
-        token_data = await get_base_token()
+        token_data = await get_base_token("HR")
 
     if not token_data:
         logger.error("Не удалось получить токен SeaTable")
@@ -212,22 +215,22 @@ async def get_metadata(app: str = "HR") -> Optional[Dict[str, str]]:
 
 
 # Отладочный скрипт для вывода ответов json по API SeaTable
-if __name__ == "__main__":
-    async def main():
-        print("БАЗОВЫЙ ТОКЕН")
-        token_data = await get_base_token("USER")
-        pprint.pprint(token_data)
-
-        print("ТАБЛИЦА")
-        menu_rows = await fetch_table(table_id='93ZW', app='USER')
-        pprint.pprint(menu_rows)
-
-        print("ДРУГАЯ ТАБЛИЦА")
-        menu_rows = await fetch_table(table_id='0000', app='PULSE')
-        pprint.pprint(menu_rows)
-
-        print("МЕТАДАННЫЕ ТАБЛИЦ")
-        metadata = await get_metadata('PULSE')
-        pprint.pprint(metadata)
-
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     async def main():
+#         print("БАЗОВЫЙ ТОКЕН")
+#         token_data = await get_base_token("HR")
+#         pprint.pprint(token_data)
+#
+#         print("ТАБЛИЦА")
+#         menu_rows = await fetch_table(table_id='PYlV', app='HR')
+#         pprint.pprint(menu_rows)
+#
+#         print("ДРУГАЯ ТАБЛИЦА")
+#         menu_rows = await fetch_table(table_id='0000', app='HR')
+#         pprint.pprint(menu_rows)
+#
+#         print("МЕТАДАННЫЕ ТАБЛИЦ")
+#         metadata = await get_metadata('PULSE')
+#         pprint.pprint(metadata)
+#
+#     asyncio.run(main())

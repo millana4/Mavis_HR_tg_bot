@@ -142,7 +142,7 @@ async def send_leaving_poll(user_id: int, fio: str, bot) -> bool:
             return False
 
 
-@router.message(F.text == "/send_exit_pulse")  # Исправлено с send_exit_pusle
+@router.message(F.text == "/send_exit_pulse")
 async def handle_exit_pulse_start(message: Message, state: FSMContext):
     """Начинает процесс отправки пульс-опроса при увольнении"""
     user_id = message.from_user.id
@@ -151,10 +151,16 @@ async def handle_exit_pulse_start(message: Message, state: FSMContext):
         await message.answer("❌ У вас нет прав для выполнения этой команды")
         return
 
+    # Клавиатура с отменой
+    cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="❌ Отмена", callback_data="exit_pulse_cancel")
+    ]])
+
     await state.set_state(ExitPulseStates.waiting_for_name_search)
     await message.answer(
         "Кому отправить опрос? Укажите, пожалуйста, фамилию и/или полное имя сотрудника, "
-        "например: Иван Соколов или Соколов Иван, или Соколов, или просто Иван."
+        "например: Иван Соколов или Соколов Иван, или Соколов, или просто Иван.",
+        reply_markup=cancel_keyboard
     )
 
 
@@ -270,34 +276,44 @@ async def handle_pulse_confirmation(callback: CallbackQuery, state: FSMContext, 
     # Отправляем опрос
     success = await send_leaving_poll(int(messenger_id), fio, bot)
 
-    if success:
-        message_text = "Опрос успешно отправлен."
-    else:
-        message_text = f"Пульс-опрос не отправлен сотруднику {fio}. Вероятно, он (она) остановил бота. Свяжитесь, пожалуйста, с сотрудником по почте."
-
     # Кнопка возврата в меню
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+    menu_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="⬅️ В главное меню", callback_data="exit_pulse_back_to_menu")
     ]])
 
-    await callback.message.edit_text(message_text, reply_markup=keyboard)
+    if success:
+        await callback.message.edit_text("Опрос успешно отправлен.", reply_markup=menu_keyboard)
+    else:
+        await callback.message.edit_text(
+            f"Пульс-опрос не отправлен сотруднику {fio}. Вероятно, он (она) остановил бота. Свяжитесь, пожалуйста, с сотрудником по почте.",
+            reply_markup=menu_keyboard
+        )
+
     await state.clear()
-    await callback.answer()
-
-
-@router.callback_query(F.data == "exit_pulse_cancel")
-async def handle_pulse_cancel(callback: CallbackQuery, state: FSMContext):
-    """Отменяет отправку пульс-опроса"""
-    await state.clear()
-    await callback.message.edit_text("Отправка пульс-опроса отменена.")
-
-    # Возвращаем в главное меню
-    await start_navigation(message=callback.message)
     await callback.answer()
 
 
 @router.callback_query(F.data == "exit_pulse_back_to_menu")
 async def handle_back_to_menu(callback: CallbackQuery):
     """Возвращает в главное меню"""
-    await start_navigation(message=callback.message)
+    try:
+        await start_navigation(message=callback.message)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка обработки кнопки возврата в меню: {str(e)}")
+        await callback.answer("Ошибка возврата в меню", show_alert=True)
+
+
+@router.callback_query(F.data == "exit_pulse_cancel")
+async def handle_pulse_cancel(callback: CallbackQuery, state: FSMContext):
+    """Отменяет отправку пульс-опроса"""
+    await state.clear()
+
+    # Кнопка возврата в меню
+    menu_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="⬅️ В главное меню", callback_data="exit_pulse_back_to_menu")
+    ]])
+
+    await callback.message.edit_text("Отправка пульс-опроса отменена.", reply_markup=menu_keyboard)
     await callback.answer()

@@ -1,13 +1,16 @@
 import asyncio
 import logging
+from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 from aiogram import Router, types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
+from config import Config
+
 from app.services.forms import start_form_questions, complete_form
 from app.services.fsm import state_manager, AppStates
-from app.seatable_api.api_forms import save_form_answers
+from app.seatable_api.api_forms import fetch_table, save_form_answers
 
 from telegram.handlers.filters import FormFilter
 from telegram.utils import check_access
@@ -241,6 +244,9 @@ async def finish_form(message: Message, form_data: Dict):
         "user_id": message.chat.id  # id пользователя в телеграме, не бота
     })
 
+    # Уведомляем администратора, что пришло новое обращение
+    await notify_feedback_admins(message.bot, message.from_user.id, form_data)
+
     # Подготавливаем финальное сообщение
     final_text = "Спасибо за обращение!"
     parse_mode = None
@@ -271,6 +277,108 @@ async def finish_form(message: Message, form_data: Dict):
 
     # Очищаем состояние формы
     await state_manager.update_data(user_id, form_data=None, current_state=AppStates.CURRENT_MENU)
+
+
+async def notify_feedback_admins(bot, user_id: int, form_data: Dict):
+    """Уведомляет администраторов о новом обращении через форму"""
+    try:
+        from app.seatable_api.api_base import fetch_table
+        from config import Config
+        from datetime import datetime
+
+        admins = await fetch_table(
+            table_id=Config.SEATABLE_ADMIN_TABLE_ID,
+            app='USER'
+        )
+
+        if not admins:
+            logger.warning("Нет данных администраторов для уведомления")
+            return
+
+        users = await fetch_table(
+            table_id=Config.SEATABLE_USERS_TABLE_ID,
+            app='USER'
+        )
+
+        if not users:
+            logger.warning("Нет данных пользователей для уведомления")
+            return
+
+        # Получаем данные отправителя
+        sender_data = None
+        for user in users:
+            if str(user.get('ID_messenger')) == str(user_id):
+                sender_data = user
+                break
+
+        sender_name = sender_data.get('FIO', 'Неизвестный') if sender_data else 'Неизвестный'
+
+        # Создаем маппинг: user_row_id -> telegram_id
+        user_id_to_telegram = {}
+        for user in users:
+            user_row_id = user.get('_id')
+            telegram_id = user.get('ID_messenger')
+            if user_row_id and telegram_id:
+                user_id_to_telegram[user_row_id] = telegram_id
+
+        feedback_admins = []
+
+        # Ищем админов с правами Feedback_admin
+        for admin in admins:
+            if admin.get('Feedback_admin') is True:
+                messenger_ids = admin.get('ID_messenger', [])
+                if isinstance(messenger_ids, list):
+                    for user_row_id in messenger_ids:
+                        telegram_id = user_id_to_telegram.get(user_row_id)
+                        if telegram_id:
+                            feedback_admins.append({
+                                'row_id': user_row_id,
+                                'telegram_id': telegram_id,
+                                'fio': admin.get('FIO', 'Администратор')
+                            })
+                        else:
+                            logger.warning(f"Не найден Telegram ID для админа с row_id: {user_row_id}")
+
+        if not feedback_admins:
+            logger.info("Нет администраторов с правами Feedback_admin для уведомления")
+            return
+
+        # ФОРМИРУЕМ СОДЕРЖАНИЕ ОБРАЩЕНИЯ
+        feedback_content = []
+        if form_data.get('questions') and form_data.get('answers'):
+            for i, (question, answer) in enumerate(zip(form_data['questions'], form_data['answers']), 1):
+                question_text = question.get('Name', f'Вопрос {i}')
+                feedback_content.append(f"{question_text} — {answer}")
+
+        feedback_text = "\n".join(feedback_content) if feedback_content else "Содержание не доступно"
+
+        # Формируем сообщение
+        message_text = (
+            f"📩 Поступило новое обращение через форму обратной связи в HR-боте\n\n"
+            f"<b>Отправитель:</b> {sender_name}\n"
+            f"<b>Время отправки:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"<b>Содержание обращения:</b>\n{feedback_text}\n\n"
+            f"Подробности в таблице «ОС ответы_ДН»"
+        )
+
+        # Отправляем сообщение каждому админу
+        for admin in feedback_admins:
+            telegram_id = admin.get('telegram_id')
+            if telegram_id:
+                try:
+                    await bot.send_message(
+                        chat_id=int(telegram_id),
+                        text=message_text,
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Уведомление отправлено админу {admin.get('fio')} (ID: {telegram_id})")
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления админу {telegram_id}: {e}")
+            else:
+                logger.warning(f"У админа {admin.get('row_id')} нет Telegram ID")
+
+    except Exception as e:
+        logger.error(f"Ошибка при уведомлении администраторов: {e}")
 
 @router.callback_query(F.data == "form_cancel")
 async def handle_form_cancel(callback: types.CallbackQuery):

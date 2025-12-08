@@ -5,7 +5,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import ReplyKeyboardRemove
 
 from app.services.cache import user_access_cache, user_role_cache
-from app.services.utils import normalize_phone
+from app.services.utils import normalize_phone, contains_restricted_emails
 from app.services.fsm import state_manager, AppStates
 from app.seatable_api.api_auth import register_id_messenger, check_id_messenger
 from app.seatable_api.api_users import get_role_from_st
@@ -15,7 +15,6 @@ from telegram.keyboards import share_contact_kb
 from telegram.handlers.handler_table import handle_content_button, handle_table_menu
 from telegram.utils import check_access
 from telegram.content import prepare_telegram_message
-from telegram.bot_menu import set_main_menu
 
 
 # Создаем роутер
@@ -150,7 +149,7 @@ async def start_navigation(message: types.Message, current_role: str = None):
             )
         elif keyboard:
             # Если есть только кнопки, отправляем пустое сообщение с ними
-            await message.answer(" ", **kwargs)
+            await message.answer("Выберите раздел:", **kwargs)
         else:
             # На случай, если меню пустое
             await message.answer("Главное меню", **kwargs)
@@ -202,17 +201,23 @@ async def process_back_callback(callback_query: types.CallbackQuery):
 
         # Если был контент - постим его Button_content перед возвратом
         if button_content:
-            if button_content.get('image_url'):
-                await callback_query.message.answer_photo(
-                    photo=button_content['image_url'],
-                    caption=button_content.get('text', ''),
-                    parse_mode="HTML"
-                )
-            elif button_content.get('text'):
-                await callback_query.message.answer(
-                    text=button_content['text'],
-                    parse_mode="HTML"
-                )
+            # Проверяем, содержит ли контент персональные данные
+            content_text = button_content.get('text', '')
+            if not contains_restricted_emails(content_text):
+                # Только если не содержит персональных данных - постим
+                if button_content.get('image_url'):
+                    await callback_query.message.answer_photo(
+                        photo=button_content['image_url'],
+                        caption=button_content.get('text', ''),
+                        parse_mode="HTML"
+                    )
+                elif button_content.get('text'):
+                    await callback_query.message.answer(
+                        text=button_content['text'],
+                        parse_mode="HTML"
+                    )
+            else:
+                logger.info(f"Контент содержит персональные данные, не постим в чат")
 
         # Возвращаемся к предыдущему экрану
         if previous_menu.startswith('content:'):

@@ -8,7 +8,7 @@ from app.services.roles import check_user_roles_daily
 logger = logging.getLogger(__name__)
 
 # Время запуска
-sync_times = [time(12, 0), time(16, 0)]
+sync_times = [time(12, 00), time(16, 0)]
 
 # Время проверки ролей
 roles_check_time = time(14, 00)

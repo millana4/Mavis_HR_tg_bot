@@ -10,6 +10,7 @@ from app.services.fsm import state_manager, AppStates
 from app.seatable_api.api_auth import register_id_messenger, check_id_messenger
 from app.seatable_api.api_users import get_role_from_st
 from app.seatable_api.api_base import fetch_table
+from telegram.bot_menu import update_user_commands
 
 from telegram.keyboards import share_contact_kb
 from telegram.handlers.handler_table import handle_content_button, handle_table_menu
@@ -40,6 +41,9 @@ async def cmd_start(message: types.Message):
         if previous_role and previous_role != current_role:
             logger.info(f"Роль изменилась при старте: {previous_role} -> {current_role}, сбрасываем навигацию")
             await state_manager.clear(user_id)
+
+        # Проверяем, какое отдать меню — обычное или админское
+        await update_user_commands(message.bot, user_id)
 
         # Если пользователь есть в таблице, инициализируем навигацию
         await start_navigation(message=message, current_role=current_role)

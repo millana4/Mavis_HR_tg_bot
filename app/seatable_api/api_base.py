@@ -114,11 +114,17 @@ async def get_base_token(app='HR') -> Optional[Dict]:
     return None
 
 
-async def fetch_table(table_id: str = '0000', app: str = "HR") -> List[Dict]:
+async def fetch_table(table_id: str = '0000', app: str = "HR", limit: int = None, start: int = None) -> List[Dict]:
     """
-    Получает строки таблицы.
+    Получает строки таблицы, поддерживает пагинацию.
     Аргументом принимает '_id'. В http таблицы указан как tid.
     Если _id при вызове не указан, то выставляет _id главного меню — 0000.
+    Приложение по умолчанию основное - HR.
+    Параметры пагинации передаютя при необходимости.
+    Возвращает:
+    - List[Dict] при успехе
+    - None при критической ошибке
+    - [] если таблица существует, но пуста
     """
     # Запрашиваем токен для нужного приложения — Мавис-HR или база пользователей
     if app == 'USER':
@@ -141,12 +147,25 @@ async def fetch_table(table_id: str = '0000', app: str = "HR") -> List[Dict]:
 
     params = {"table_id": table_id}
 
+    # Добавляем параметры пагинации, если указаны
+    if limit is not None:
+        params["limit"] = limit
+    if start is not None:
+        params["start"] = start
+
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers, params=params) as response:
             if response.status == 200:
                 data = await response.json()
                 logger.debug(f"Успешный запрос: {url} {params}")
-                return data.get("rows", [])
+
+                # Различаем "таблица пуста" и "ошибка в структуре ответа"
+                rows = data.get("rows", [])
+                if isinstance(rows, list):
+                    return rows  # Возвращаем список (может быть пустым)
+                else:
+                    logger.error(f"Некорректный формат ответа: 'rows' не является списком")
+                    return None
 
             # Если ошибка 404 - пробуем сбросить токен и запросить новый
             if response.status == 404:
@@ -180,8 +199,8 @@ async def fetch_table(table_id: str = '0000', app: str = "HR") -> List[Dict]:
             error_text = await response.text()
             logger.debug(f"Ошибка: {response.status} - {error_text}")
 
-    logger.error(f"Все варианты не сработали для table_id: {table_id}")
-    return []
+    logger.error(f"Не удалось выполнить запрос для table_id: {table_id}")
+    return None
 
 
 async def get_metadata(app: str = "HR") -> Optional[Dict[str, str]]:
@@ -218,11 +237,11 @@ async def get_metadata(app: str = "HR") -> Optional[Dict[str, str]]:
 # if __name__ == "__main__":
 #     async def main():
 #         print("БАЗОВЫЙ ТОКЕН")
-#         token_data = await get_base_token("HR")
+#         token_data = await get_base_token("USER")
 #         pprint.pprint(token_data)
 #
 #         print("ТАБЛИЦА")
-#         menu_rows = await fetch_table(table_id='PYlV', app='HR')
+#         menu_rows = await fetch_table(table_id='IB80', app='USER')
 #         pprint.pprint(menu_rows)
 #
 #         print("ДРУГАЯ ТАБЛИЦА")
@@ -233,4 +252,4 @@ async def get_metadata(app: str = "HR") -> Optional[Dict[str, str]]:
 #         metadata = await get_metadata('PULSE')
 #         pprint.pprint(metadata)
 #
-#     asyncio.run(main())
+    # asyncio.run(main())

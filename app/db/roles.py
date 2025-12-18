@@ -1,13 +1,18 @@
 import logging
 from datetime import datetime, date
+from enum import Enum
 from typing import List, Optional, Dict
 from dateutil.relativedelta import relativedelta
 
 from config import Config
 from app.seatable_api.api_base import fetch_table
-from app.seatable_api.api_sync_1c import update_user_in_table
 
 logger = logging.getLogger(__name__)
+
+
+class UserRole(str, Enum):
+    EMPLOYEE = "employee"
+    NEWCOMER = "newcomer"
 
 
 class RoleChecker:
@@ -80,11 +85,11 @@ class RoleChecker:
 
     async def _get_1c_users(self) -> List[Dict]:
         """
-        Получает данные пользователей из 1С
+        Получает данные пользователей из сводной таблицы пользователей
         """
         try:
             users = await fetch_table(
-                table_id=Config.SEATABLE_1C_TABLE_ID,
+                table_id=Config.SEATABLE_PIVOT_TABLE_ID,
                 app='USER'
             )
 
@@ -136,7 +141,7 @@ class RoleChecker:
             logger.warning(f"Пользователь не найден в 1С: {user.get('FIO')} ({user_snils})")
             return False
 
-        # Получаем дату устройства из 1С
+        # Получаем дату устройства из сводной таблицы пользователей
         employment_date_str = user_1c.get('Data_employment')
         employment_date = self._parse_date(employment_date_str)
 
@@ -154,20 +159,11 @@ class RoleChecker:
                 'Role': 'employee'
             }
 
-            # Также обновляем дату устройства если есть
-            if employment_date:
-                update_data['Data_employment'] = employment_date.isoformat()
-
-            success = await update_user_in_table(row_id, update_data)
-
-            if success:
-                logger.info(f"Роль обновлена: {user.get('FIO')} -> employee")
-                return True
-            else:
-                logger.error(f"Ошибка обновления роли: {user.get('FIO')}")
-                return False
-
-        return False  # Роль не менялась
+            logger.info(f"Роль обновлена: {user.get('FIO')} -> employee")
+            return True
+        else:
+            logger.error(f"Ошибка обновления роли: {user.get('FIO')}")
+            return False
 
 
 # Глобальный экземпляр

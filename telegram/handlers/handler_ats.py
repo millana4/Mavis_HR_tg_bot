@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import pprint
 from typing import List, Dict
 
 from aiogram import Router, types, F, Bot
@@ -8,7 +7,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import Config
 from app.services.fsm import state_manager, AppStates
-from app.services.ats import give_employee_data, format_employee_text
+from app.db.ats import give_employee_data, format_employee_text
 from app.seatable_api.api_ats import get_employees, get_department_list
 
 from telegram.handlers.filters import NameSearchFilter, SearchTypeFilter

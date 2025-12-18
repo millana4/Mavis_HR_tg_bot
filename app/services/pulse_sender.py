@@ -9,9 +9,11 @@ from app.seatable_api.api_base import fetch_table
 from app.seatable_api.api_pulse import get_pulse_tasks
 from telegram.content import prepare_telegram_message
 
+
 logger = logging.getLogger(__name__)
 
 sending_time = time(11, 0)
+
 
 class PulseSender:
     """Отправляет пульс-опросы пользователям"""

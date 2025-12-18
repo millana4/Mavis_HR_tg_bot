@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Tuple
 
+from app.db.users import User
 from app.seatable_api.api_pulse import create_pulse_task
 
 logger = logging.getLogger(__name__)
@@ -102,7 +103,7 @@ class PulseTaskCreator:
         """
         try:
             # Парсим дату устройства
-            employment_date = self._parse_date(user_data.get('Data_employment'))
+            employment_date = self._parse_date(user_data.get('Date_employment'))
             if not employment_date:
                 logger.warning(f"Нет даты устройства для пользователя {user_data.get('FIO')}")
                 return False
@@ -131,9 +132,7 @@ class PulseTaskCreator:
             logger.error(f"Ошибка создания пульс-опросов: {e}")
             return False
 
-
     def _parse_date(self, date_str: Optional[str]) -> Optional[date]:
-        """Парсит дату из строки"""
         if not date_str:
             return None
         try:
@@ -146,8 +145,15 @@ class PulseTaskCreator:
         """
         Определяет, какие опросы нужны пользователю
         """
+        if not employment_date:
+            return []
+
+        # Проверяем, работает ли меньше года
         today = datetime.now().date()
-        days_worked = (today - employment_date).days
+        one_year_later = employment_date + timedelta(days=365)
+        if today > one_year_later:
+            # Работает больше года - не создаем опросы
+            return []
 
         needed_polls = []
 
@@ -220,6 +226,25 @@ class PulseTaskCreator:
 
         # Записываем в таблицу через API
         return await create_pulse_task(task_data)
+
+    async def _create_pulse_for_user(user: User) -> bool:
+        """
+        Создает пульс-опросы для пользователя
+        """
+        # Конвертируем User в dict для передачи
+        user_dict = {
+            'FIO': user.fio,
+            'Name': user.snils,
+            'Department': user.department,
+            'Position': user.position,
+            'Data_employment': user.employment_date.isoformat() if user.employment_date else None
+        }
+
+        try:
+            return await create_pulse_all_tasks(user_dict)
+        except Exception as e:
+            logger.error(f"Ошибка создания пульс-опросов для {user.fio}: {e}")
+            return False
 
 
 # Глобальный экземпляр

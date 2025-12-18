@@ -1,5 +1,6 @@
 import logging
 import aiohttp
+from datetime import datetime
 
 from config import Config
 from app.seatable_api.api_base import get_base_token, fetch_table
@@ -84,6 +85,8 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
         # Используем человекочитаемые названия колонок, а не их внутренние ключи
         phone_column = "Phone"  # Колонка с телефонами
         id_messenger_column = "ID_messenger"  # Колонка для id_messenger
+        date_registration = "Date_registration"
+        role_column = "Role"
 
         # Получаем параметры
         params = {
@@ -101,15 +104,10 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
                 data = await resp.json()
                 rows = data.get("rows", [])
 
-                for row in rows[:5]:
-                    raw_phone = str(row.get(phone_column, "N/A"))
-                    logger.debug(f"- Исходный: '{raw_phone}' | Нормализованный: '{normalize_phone(raw_phone)}'")
-
                 # Ищем точное совпадение
                 matched_row = None
                 for row in rows:
                     if phone_column in row:
-                        # Нормализуем телефон из таблицы перед сравнением
                         row_phone_normalized = normalize_phone(str(row[phone_column]))
                         if row_phone_normalized == phone:
                             matched_row = row
@@ -126,14 +124,26 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
 
                 logger.info(f"Найдена строка пользователя для обновления (ID: {row_id})")
 
-                # Подготовка обновления
+                # Проверяем роль: если пусто или None - нужно установить 'employee'
+                current_role = matched_row.get(role_column)
+                needs_role_update = False
+
+                # Если роль отсутствует или пустая - нужно установить 'employee'
+                if not current_role or current_role == '':
+                    needs_role_update = True
+
+                # Подготовка обновления (основные поля)
                 update_data = {
                     "table_id": Config.SEATABLE_USERS_TABLE_ID,
                     "row_id": row_id,
                     "row": {
-                        id_messenger_column: str(id_messenger)
+                        id_messenger_column: str(id_messenger),
+                        date_registration: datetime.now().date().strftime('%Y-%m-%d')
                     }
                 }
+
+                if needs_role_update:
+                    update_data["row"][role_column] = "employee"
 
                 # Отправка обновления
                 async with session.put(base_url, headers=headers, json=update_data) as resp:
@@ -141,7 +151,10 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
                         logger.error(f"Ошибка обновления: {resp.status} - {await resp.text()}")
                         return False
 
-                    logger.info(f"ID_messenger успешно добавлен для пользователя с телефоном {phone}")
+                    if needs_role_update:
+                        logger.info(f"ID_messenger и роль 'employee' успешно добавлены для телефона {phone}")
+                    else:
+                        logger.info(f"ID_messenger успешно добавлен для пользователя с телефоном {phone}")
                     return True
 
     except Exception as e:

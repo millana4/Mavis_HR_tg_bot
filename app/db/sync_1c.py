@@ -224,8 +224,11 @@ async def process_1c_sync():
         # Добавляем паузу секунды перед следующей синхронизацией, так как в авторизации используется сводная таблица
         await asyncio.sleep(5)
 
+        # Повторно получаю актуальные данные
+        updated_users_in_pivot = await get_pivot_table_users()
+
         # Синхронизация авторизационной таблицы
-        await sync_auth(users_in_pivot)
+        await sync_auth(updated_users_in_pivot)
 
         logger.info("Синхронизация 1С завершена")
 

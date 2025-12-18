@@ -246,7 +246,7 @@ async def update_auth(row_id: str, auth_record: Dict) -> bool:
         async with aiohttp.ClientSession() as session:
             async with session.put(url, json=payload, headers=headers) as response:
                 if response.status == 200:
-                    logger.info(f"Обновлена запись в авторизационной таблице: {auth_record.get('FIO')}")
+                    logger.info(f"Обновлена запись в авторизационной таблице: {row_id}")
                     return True
                 else:
                     error_text = await response.text()

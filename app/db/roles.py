@@ -4,6 +4,7 @@ from enum import Enum
 from typing import List, Optional, Dict
 from dateutil.relativedelta import relativedelta
 
+from app.seatable_api.api_sync_1c import update_auth
 from config import Config
 from app.seatable_api.api_base import fetch_table
 
@@ -34,20 +35,27 @@ class RoleChecker:
 
             logger.info(f"Найдено {len(newcomer_users)} пользователей с ролью newcomer")
 
-            # Получаем данные из 1С для проверки дат
-            users_1c = await self._get_1c_users()
+            # Получаем данные из сводной таблицы для проверки дат
+            users_pivot = await self._get_users()
 
-            if not users_1c:
-                logger.warning("Нет данных из 1С для проверки ролей")
+            if not users_pivot:
+                logger.warning("Нет данных для проверки ролей")
                 return
 
             # Проверяем каждого новичка
             updated_count = 0
             for user in newcomer_users:
                 try:
-                    updated = await self._check_user_role(user, users_1c)
-                    if updated:
+                    need_update = await self._check_user_role(user, users_pivot)
+                    if need_update:
+                        update_data = {
+                            'Role': 'employee'
+                        }
+
+                        success = await update_auth(user.get('_id'), update_data)
                         updated_count += 1
+                        if success:
+                            logger.info(f"Роль пользователя {user.get('FIO')} изменилась: employee ")
                 except Exception as e:
                     logger.error(f"Ошибка проверки пользователя {user.get('FIO')}: {e}")
 
@@ -59,13 +67,10 @@ class RoleChecker:
 
     async def _get_newcomer_users(self) -> List[Dict]:
         """
-        Получает пользователей с ролью newcomer
+        Получает пользователей из авторизационной таблицы с ролью newcomer
         """
         try:
-            users = await fetch_table(
-                table_id=Config.SEATABLE_USERS_TABLE_ID,
-                app='USER'
-            )
+            users = await fetch_table(table_id=Config.SEATABLE_USERS_TABLE_ID, app='USER')
 
             if not users:
                 return []
@@ -83,15 +88,12 @@ class RoleChecker:
             return []
 
 
-    async def _get_1c_users(self) -> List[Dict]:
+    async def _get_users(self) -> List[Dict]:
         """
         Получает данные пользователей из сводной таблицы пользователей
         """
         try:
-            users = await fetch_table(
-                table_id=Config.SEATABLE_PIVOT_TABLE_ID,
-                app='USER'
-            )
+            users = await fetch_table(table_id=Config.SEATABLE_PIVOT_TABLE_ID, app='USER')
 
             return users if users else []
 
@@ -130,7 +132,7 @@ class RoleChecker:
             logger.warning(f"У пользователя нет СНИЛС: {user.get('FIO')}")
             return False
 
-        # Ищем пользователя в данных 1С
+        # Ищем пользователя в сводной таблице
         user_1c = None
         for u in users_1c:
             if u.get('Name') == user_snils:
@@ -138,31 +140,19 @@ class RoleChecker:
                 break
 
         if not user_1c:
-            logger.warning(f"Пользователь не найден в 1С: {user.get('FIO')} ({user_snils})")
+            logger.warning(f"Пользователь не найден в сводной таблице: {user.get('FIO')} ({user_snils})")
             return False
 
         # Получаем дату устройства из сводной таблицы пользователей
-        employment_date_str = user_1c.get('Data_employment')
+        employment_date_str = user_1c.get('Date_employment')
         employment_date = self._parse_date(employment_date_str)
 
         # Проверяем, является ли еще новичком
         is_still_newcomer = self._is_still_newcomer(employment_date)
 
         if not is_still_newcomer:
-            # Меняем роль на employee
-            row_id = user.get('_id')
-            if not row_id:
-                logger.error(f"Нет row_id для пользователя {user.get('FIO')}")
-                return False
-
-            update_data = {
-                'Role': 'employee'
-            }
-
-            logger.info(f"Роль обновлена: {user.get('FIO')} -> employee")
             return True
         else:
-            logger.error(f"Ошибка обновления роли: {user.get('FIO')}")
             return False
 
 

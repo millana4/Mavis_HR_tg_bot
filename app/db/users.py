@@ -221,21 +221,10 @@ class User(BaseModel):
                     'Name': self.id,  # СНИЛС
                     'FIO': self.fio,
                     'Phone': phone,
-                    'Role': self.role.value if self.role else UserRole.EMPLOYEE.value,
+                    'Role': None,
                     'ID_messenger': '',
                     'Date_registration': None,
                 })
-        else:
-            # Если нет телефонов - одна запись без телефона
-            auth_records.append({
-                'Name': self.id,
-                'FIO': self.fio,
-                'Phone': '',
-                'Role': self.role.value if self.role else UserRole.EMPLOYEE.value,
-                'ID_messenger': '',
-                'Date_registration': None,
-            })
-
         return auth_records
 
 

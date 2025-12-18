@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import pprint
+import re
 from collections import defaultdict
 from datetime import datetime, time, timedelta, date
 from typing import List, Dict, Iterable, Callable, Awaitable
@@ -21,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 # Время запуска синхронизации с выгрузкой 1С
-sync_times = [time(11, 49), time(16, 0)]
+sync_times = [time(12, 00), time(17, 19)]
 
 # Время проверки ролей
-roles_check_time = time(14, 00)
+roles_check_time = [time(17, 21)]
 
 
 #__________________________________________________
@@ -163,6 +164,7 @@ async def get_pivot_table_users() -> Dict[str, Dict]:
         pivot_users = await fetch_table(table_id=Config.SEATABLE_PIVOT_TABLE_ID, app='USER')
 
         if not pivot_users:
+            print("ybctuj")
             return {}
 
         return {user.get('Name'): user for user in pivot_users if user.get('Name')}
@@ -219,8 +221,11 @@ async def process_1c_sync():
         # Вызов синхронизации со сводной таблицей
         await sync_pivot(users_from_1c, users_in_pivot)
 
+        # Добавляем паузу секунды перед следующей синхронизацией, так как в авторизации используется сводная таблица
+        await asyncio.sleep(5)
+
         # Синхронизация авторизационной таблицы
-        await sync_auth()
+        await sync_auth(users_in_pivot)
 
         logger.info("Синхронизация 1С завершена")
 
@@ -231,13 +236,27 @@ async def process_1c_sync():
 async def sync_pivot(users_from_1c: Dict[str, User], users_in_pivot: Dict[str, Dict]):
     """Синхронизация пользователей со сводной таблицей по ключевым данным"""
 
+    logger.info("Начало синхронизация пользователей со сводной таблицей")
+    logger.info(f"Получено из 1С: {len(users_from_1c)} пользователей")
+    logger.info(f"В сводной таблице: {len(users_in_pivot)} пользователей")
+
+    created_count = 0
+    updated_count = 0
+    unchanged_count = 0
+    archived_count = 0
+    error_count = 0
+
+    # Обработка пользователей из 1С
     for snils, user in users_from_1c.items():
         try:
+            logger.debug(f"Обработка пользователя: СНИЛС={snils}, ФИО={user.fio}")
+
             new_data = user.to_pivot_table_format()
             date_was_added_now = False
 
             if snils in users_in_pivot:
                 existing_data = users_in_pivot[snils]
+                logger.debug(f"Пользователь существует в сводной таблице")
 
                 # Сохраняем существующую дату устройства
                 existing_date = existing_data.get('Date_employment')
@@ -253,30 +272,42 @@ async def sync_pivot(users_from_1c: Dict[str, User], users_in_pivot: Dict[str, D
 
                 # Проверка изменений только по ключевому сету
                 if pivot_data_changed(existing_data, new_data) or date_was_added_now:
-                    await update_pivot(existing_data['_id'], new_data)
-                    logger.info(f"Обновлён: {user.fio}")
+                    logger.info(f"Обновление данных пользователя: {user.fio} (СНИЛС: {snils})")
+                    new_data['Is_archived'] = False
+                    success = await update_pivot(existing_data['_id'], new_data)
+                    if success:
+                        updated_count += 1
+                        logger.info(f"Обновлён: {user.fio}")
 
-                    # Если дата добавилась и она меньше года — создаём пульс-опросы
-                    if date_was_added_now:
-                        one_year_ago = datetime.now().date() - relativedelta(years=1)
-                        if user.date_employment and user.date_employment >= one_year_ago:
-                            await create_pulse(user)
+                        # Если дата добавилась и она меньше года — создаём пульс-опросы
+                        if date_was_added_now:
+                            one_year_ago = datetime.now().date() - relativedelta(years=1)
+                            if user.date_employment and user.date_employment >= one_year_ago:
+                                logger.info(f"Дата устройства добавлена, создаём пульс-опросы для {user.fio}")
+                                await create_pulse(user)
                 else:
                     logger.info(f"Без изменений: {user.fio}")
+                    unchanged_count += 1
 
             else:
                 # Новый пользователь
-                await create_pivot(new_data)
-                logger.info(f"Создан: {user.fio}")
+                logger.info(f"Новый пользователь: {user.fio} (СНИЛС: {snils})")
+                success = await create_pivot(new_data)
+                if success:
+                    created_count += 1
 
-                # Пульс-опросы для новых сотрудников с датой меньше года работы
-                if user.date_employment:
-                    one_year_ago = datetime.now().date() - relativedelta(years=1)
-                    if user.date_employment >= one_year_ago:
-                        await create_pulse(user)
+                    # Пульс-опросы для новых сотрудников с датой меньше года работы
+                    if user.date_employment:
+                        one_year_ago = datetime.now().date() - relativedelta(years=1)
+                        if user.date_employment >= one_year_ago:
+                            logger.info(f"Создаём пульс-опросы для нового сотрудника {user.fio}")
+                            await create_pulse(user)
+                    else:
+                        logger.debug(f"У пользователя {user.fio} нет даты устройства, пульс-опросы не создаются")
 
         except Exception as e:
-            logger.error(f"Ошибка обработки {user.fio}: {e}")
+            logger.error(f"Ошибка обработки пользователя {user.fio} (СНИЛС: {snils}): {e}", exc_info=True)
+            error_count += 1
 
     # Архивирование пользователей, которых больше нет в 1С
     users_to_archive = {
@@ -287,13 +318,23 @@ async def sync_pivot(users_from_1c: Dict[str, User], users_in_pivot: Dict[str, D
 
     for snils in users_to_archive:
         try:
-            await archive_pivot(users_in_pivot[snils]['_id'], users_in_pivot[snils])
-            logger.info(f"Архивирован: {snils}")
+            user_data = users_in_pivot[snils]
+            fio = user_data.get('FIO', 'нет ФИО')
+
+            success = await archive_pivot(user_data['_id'], user_data)
+            if success:
+                archived_count += 1
+                logger.info(f"Архивирован: {fio} (СНИЛС: {snils})")
         except Exception as e:
-            logger.error(f"Ошибка архивации {snils}: {e}")
+            logger.error(f"Ошибка архивации пользователя {snils}: {e}", exc_info=True)
+            error_count += 1
+
+    logger.info("Синхронизация сводной таблицы завершена")
+    logger.info(f"ИТОГО: создано={created_count}, обновлено={updated_count}, без изменений={unchanged_count}, "
+                f"архивировано={archived_count}, ошибок={error_count}")
 
 
-async def sync_auth():
+async def sync_auth(pivot_users):
     """
     Синхронизация таблицы авторизации на основе данных из сводной таблицы.
     Только активные пользователи (не архивные).
@@ -301,22 +342,37 @@ async def sync_auth():
     logger.info("Начало синхронизации таблицы авторизации")
 
     try:
-        # Получаем всех пользователей из сводной таблицы
-        pivot_users = await get_pivot_table_users()
+        logger.info(f"Получено {len(pivot_users)} пользователей из сводной таблицы")
 
-        # Фильтруем только активных пользователей
-        active_pivot_users = {
-            snils: user_data
-            for snils, user_data in pivot_users.items()
-            if not user_data.get('Is_archived', False)
-        }
+        # Фильтруем активных и архивных пользователей отдельно
+        active_pivot_users = {}
+        archived_pivot_users = {}
+
+        for snils, user_data in pivot_users.items():
+            # Если ключа 'Is_archived' нет вообще - значит пользователь активный
+            if 'Is_archived' not in user_data:
+                active_pivot_users[snils] = user_data
+            # Если ключ есть и он True - пользователь архивный
+            elif user_data.get('Is_archived') is True:
+                archived_pivot_users[snils] = user_data
+            # Если ключ есть и он False - пользователь активный
+            else:
+                active_pivot_users[snils] = user_data
+
+        logger.info(f"Найдено активных пользователей: {len(active_pivot_users)}")
+        logger.info(f"Найдено архивных пользователей: {len(archived_pivot_users)}")
+
 
         # Получаем текущих пользователей из авторизационной таблицы
         auth_users = await get_auth()
+        logger.info(f"В авторизационной таблице найдено {len(auth_users)} пользователей")
+
+        created_count = 0
+        updated_count = 0
+        skipped_count = 0
 
         # Обрабатываем каждого активного пользователя
-        # for snils, pivot_user in active_pivot_users.items():
-        for snils, pivot_user in list(active_pivot_users.items())[:10]:
+        for snils, pivot_user in active_pivot_users.items():
             try:
                 # Дата устройства
                 date_employment_str = pivot_user.get('Date_employment')
@@ -324,8 +380,8 @@ async def sync_auth():
                 if date_employment_str:
                     try:
                         date_employment = datetime.strptime(date_employment_str, '%Y-%m-%d').date()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"Некорректный формат даты устройства: {date_employment_str}, ошибка: {e}")
 
                 # Определяем роль
                 role = UserRole.EMPLOYEE
@@ -335,13 +391,24 @@ async def sync_auth():
                         role = UserRole.NEWCOMER
 
                 fio = pivot_user.get('FIO', '')
-                phones = pivot_user.get('Phones', [])
-                if not isinstance(phones, list):
-                    phones = [phones] if phones else []
+                # Получаем и нормализуем телефоны
+                phones_raw = pivot_user.get('Phones', '')
+
+                # Нормализуем строку и получаем список телефонов
+                all_normalized_phones = normalize_phones_string(phones_raw) if phones_raw else []
+
+                # Фильтруем только мобильные (начинаются с +7 и имеют 11 цифр после +)
+                mobile_phones = [phone for phone in all_normalized_phones if
+                                 phone.startswith('+7') and len(re.sub(r'\D', '', phone)) == 11]
+
+                if not mobile_phones:
+                    logger.info(f"Пропускаем {fio} (СНИЛС: {snils}) - нет мобильных телефонов")
+                    skipped_count += 1
+                    continue
 
                 if snils not in auth_users:
-                    # Пользователь отсутствует - создаем записи по каждому телефону
-                    for phone in phones:
+                    # Пользователь еще отсутствует в авторизационной таблице - создаем записи по каждому МОБИЛЬНОМУ телефону
+                    for phone in mobile_phones:
                         auth_record = {
                             'Name': snils,
                             'FIO': fio,
@@ -349,21 +416,39 @@ async def sync_auth():
                             'Role': role.value,
                             'ID_messenger': ''
                         }
-                        await create_auth(auth_record)
-                    logger.info(f"Созданы записи в авторизационной таблице для: {fio}")
+                        logger.debug(f"Создание записи: телефон={phone}, роль={role.value}")
+                        success = await create_auth(auth_record)
+                        if success:
+                            created_count += 1
+                    logger.info(f"Созданы {len(mobile_phones)} записи(ей) для {fio}")
                 else:
-                    # Пользователь есть - обновляем FIO, телефоны и роль при изменениях
+                    logger.info(f"Существующий пользователь {fio} (СНИЛС: {snils}) - проверяем обновления")
                     existing_records = auth_users[snils]
 
-                    # Обновляем FIO и роль
+                    # Обновляем FIO и роль во ВСЕХ существующих записях
+                    records_to_update = []
                     for record in existing_records:
                         if record.get('FIO') != fio or record.get('Role') != role.value:
-                            await update_auth(record['_id'], {'FIO': fio, 'Role': role.value})
+                            records_to_update.append(record)
 
-                    # Добавляем новые телефоны
+                    if records_to_update:
+                        logger.info(f"Обновляем {len(records_to_update)} записи(ей) для {fio}")
+                        for record in records_to_update:
+                            logger.debug(
+                                f"Обновление записи FIO={record.get('FIO')}→{fio}, Role={record.get('Role')}→{role.value}")
+                            success = await update_auth(record['_id'], {'FIO': fio, 'Role': role.value})
+                            if success:
+                                updated_count += 1
+                    else:
+                        logger.info(f"Не требуется обновление")
+
+                    # Добавляем новые мобильные телефоны
                     existing_phones = {r.get('Phone', '') for r in existing_records}
-                    for phone in phones:
-                        if phone and phone not in existing_phones:
+
+                    new_phones = [phone for phone in mobile_phones if phone and phone not in existing_phones]
+                    if new_phones:
+                        logger.info(f"Добавляем {len(new_phones)} новых телефонов для {fio}")
+                        for phone in new_phones:
                             auth_record = {
                                 'Name': snils,
                                 'FIO': fio,
@@ -371,26 +456,36 @@ async def sync_auth():
                                 'Role': role.value,
                                 'ID_messenger': ''
                             }
-                            await create_auth(auth_record)
+                            logger.info(f"Создание новой записи с телефоном: {phone}")
+                            success = await create_auth(auth_record)
+                            if success:
+                                created_count += 1
 
             except Exception as e:
-                logger.error(f"Ошибка обработки пользователя {snils}: {e}")
+                logger.error(f"Ошибка обработки пользователя {snils} ({pivot_user.get('FIO', 'нет ФИО')}): {e}",
+                             exc_info=True)
 
         # Удаляем записи архивных пользователей
-        archived_snils = {snils for snils, user_data in pivot_users.items() if user_data.get('Is_archived', False)}
-        for snils in archived_snils:
-            if snils in auth_users:
+        auth_users_updated = await get_auth()
+        deleted_count = 0
+
+        for snils, pivot_user in archived_pivot_users.items():
+            if snils in auth_users_updated:
                 try:
-                    for record in auth_users[snils]:
-                        await delete_auth(record['_id'])
-                    logger.info(f"Удалены записи архивного пользователя: {snils}")
+                    records_to_delete = auth_users_updated[snils]
+                    logger.info(f"Удаление {len(records_to_delete)} записей архивного пользователя: СНИЛС={snils}")
+                    for record in records_to_delete:
+                        success = await delete_auth(record['_id'])
+                        if success:
+                            deleted_count += 1
                 except Exception as e:
-                    logger.error(f"Ошибка удаления архивного пользователя {snils}: {e}")
+                    logger.error(f"Ошибка удаления архивного пользователя {snils}: {e}", exc_info=True)
 
         logger.info("Синхронизация авторизации завершена")
+        logger.info(f"ИТОГО: создано={created_count}, обновлено={updated_count}, удалено={deleted_count}, пропущено={skipped_count}")
 
     except Exception as e:
-        logger.error(f"Ошибка синхронизации таблицы авторизации: {e}")
+        logger.error(f"Критическая ошибка синхронизации таблицы авторизации: {e}")
 
 
 async def create_pulse(user: User):

@@ -68,12 +68,12 @@ async def create_menu_keyboard(table_data: List[Dict], current_table_id: str, us
         if not name or name == 'Info':
             continue
 
-        if row.get('Submenu_link') and Config.SEATABLE_EMPLOYEE_BOOK_ID in row.get('Submenu_link'):
+        if row.get('Submenu_link') and Config.SEATABLE_PIVOT_TABLE_ID in row.get('Submenu_link'):
             # В Submenu_link может быть ссылка на справочник сотрудников
             submenu_id = re.search(r'tid=([^&]+)', row['Submenu_link']).group(1)
             inline_keyboard.append([InlineKeyboardButton(
                 text=name,
-                callback_data=f"ats:{submenu_id}"
+                callback_data=f"contacts:{submenu_id}"
             )])
         elif row.get('Submenu_link'):
             # Или в Submenu_link может быть ссылка на другое меню

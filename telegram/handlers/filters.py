@@ -23,3 +23,15 @@ class SearchTypeFilter(Filter):
     async def __call__(self, message: types.Message) -> bool:
         user_data = await state_manager.get_data(message.from_user.id)
         return user_data.get('current_state') == AppStates.WAITING_FOR_SEARCH_TYPE
+
+
+class ShopSearchFilter(Filter):
+    async def __call__(self, message: types.Message) -> bool:
+        user_data = await state_manager.get_data(message.from_user.id)
+        return user_data.get('current_state') == AppStates.WAITING_FOR_SHOP_TITLE_SEARCH
+
+
+class DrugstoreSearchFilter(Filter):
+    async def __call__(self, message: types.Message) -> bool:
+        user_data = await state_manager.get_data(message.from_user.id)
+        return user_data.get('current_state') == AppStates.WAITING_FOR_DRUGSTORE_TITLE_SEARCH

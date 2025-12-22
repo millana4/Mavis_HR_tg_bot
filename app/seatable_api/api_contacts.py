@@ -7,27 +7,35 @@ from app.seatable_api.api_base import fetch_table, get_metadata
 
 logger = logging.getLogger(__name__)
 
-async def get_employees() -> List[Dict]:
+async def get_employees(table_id:str) -> List[Dict]:
     """
     Обращается по АПИ в таблицу со справочником и возвращает json с данными сотрудников.
     Пример ответа:
     [
-       {
-        'Company': ['ООО «Компания»'],
-        'Department': 'IT',
-        'Email': 'employee@email.ru',
-        'Location': 'office №1',
-        'Name/Department': 'Константин',
-        'Number': 111,
-        'Photo': ['https://photo.jpg'],
-        'Position': 'job_title',
-        '_ctime': '2025-09-09T11:11:16.637+00:00',
-        '_id': 'LuKPfQWmQcWSRj6RZV9Z5g',
-        '_mtime': '2025-09-13T13:25:45.708+00:00'},
+       {'Companies': 'ООО "МАВИС"',
+        'Company_segment': ['МАВИС'],
+         'Date_employment': '2020-12-02',
+         'Departments': 'Администрация',
+         'Email_mavis': 'example@mavis.ru',
+         'Email_other': 'example@mail.ru',
+         'Email_votonia': 'example@votonia.ru',
+         'FIO': 'Никола Тесла',
+         'Internal_number': '999',
+         'Location': 'каб.1',
+         'Name': '111-111-111 11',
+         'Number_direct': '999-99-99',
+         'Phones': '+79998887766',
+         'Photo': ['http://seadoc.r2d.ru/f/5b4420ff4a86468cab51/?dl=1'],
+         'Positions': 'Исполнительный директор',
+         'Prefix': 9,
+         'Previous_surname': 'Tesla',
+         '_ctime': '2025-12-18T14:15:00.869+00:00',
+         '_id': 'fyvzqpThRz-wJ3CqL25flQ',
+         '_mtime': '2025-12-19T12:43:20.254+00:00'},
     ]
     """
     try:
-        employees_data = await fetch_table(table_id=Config.SEATABLE_EMPLOYEE_BOOK_ID, app='USER')
+        employees_data = await fetch_table(table_id=table_id, app='USER')
         # pprint.pprint(employees_data)
         return employees_data
     except Exception as e:
@@ -47,7 +55,7 @@ async def get_department_list() -> List[str]:
         tables_list = ats_table_metadata.get('metadata', {}).get('tables', [])
 
         for table in tables_list:
-            if table.get('_id') == Config.SEATABLE_EMPLOYEE_BOOK_ID:
+            if table.get('_id') == Config.SEATABLE_ATS_BOOK_ID:
                 columns = table.get('columns', [])
 
                 # Ищем колонку Department
@@ -61,4 +69,3 @@ async def get_department_list() -> List[str]:
     except Exception as e:
         print(f"Ошибка при получении списка отделов: {e}")
         return []
-

@@ -8,9 +8,17 @@ share_contact_kb = ReplyKeyboardMarkup(
     one_time_keyboard=True,
 )
 
-# Клавиатура для выбора типа поиска в справочнике сотрудников
+# Клавиатура для выбора типа поиска в контактах
 SEARCH_TYPE_KEYBOARD = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Искать по ФИО", callback_data="search_by_name")],
-    [InlineKeyboardButton(text="Искать по отделу", callback_data="search_by_department")],
+    [InlineKeyboardButton(text="Сотрудники", callback_data="search_by_name")],
+    [InlineKeyboardButton(text="Подразделения", callback_data="search_company_group")],
+    [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
+])
+
+# Клавиатура для выбора подразделений
+SEARCH_COMPANY_GROUP = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Телефоны отделов «Мавис»", callback_data="search_by_department")],
+    [InlineKeyboardButton(text="Магазины «Вотоня»", callback_data="search_shop")],
+    [InlineKeyboardButton(text="Аптеки «Имбирь»", callback_data="search_drugstore")],
     [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
 ])

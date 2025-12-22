@@ -14,6 +14,9 @@ class AppStates:
     WAITING_FOR_SEARCH_TYPE = "waiting_for_search_type"
     WAITING_FOR_NAME_SEARCH = "waiting_for_name_search"
     WAITING_FOR_DEPARTMENT_SEARCH = "waiting_for_department_search"
+    WAITING_FOR_COMPANY_GROUP_SEARCH = "waiting_for_company_group_search"
+    WAITING_FOR_SHOP_TITLE_SEARCH = "waiting_for_shop_title_search"
+    WAITING_FOR_DRUGSTORE_TITLE_SEARCH = "waiting_for_drugstore_title_search"
     USER_ROLE = "user_role"
 
 

@@ -4,7 +4,8 @@ import logging
 
 from app.seatable_api.api_users import change_user_role
 from app.services.fsm import state_manager, AppStates
-from app.services.cache import clear_user_role_cache, clear_user_access_cache
+from app.services.cache import clear_user_auth
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -23,31 +24,22 @@ async def handle_checkout_newcomer(message: Message):
         await message.answer("❌ У вас нет прав для выполнения этой команды")
         return
 
-    # Очищаем состояние FSM
-    await state_manager.clear(user_id)
-
-    # Очищаем кеши доступа и ролей
-    await clear_user_role_cache(user_id)
-    await clear_user_access_cache(user_id)
-
     # Меняем роль в Seatable
     success = await change_user_role(user_id, "newcomer")
 
     if success:
-        # Устанавливаем новую роль
-        await state_manager.set_user_role(user_id, "newcomer")
+        # Очищаем кеш авторизации пользователя
+        clear_user_auth(user_id)
 
-        # Получаем ID главного меню для новой роли
-        main_menu_id = await state_manager.get_main_menu_id(user_id)
+        # Очищаем состояние FSM (включая историю навигации)
+        await state_manager.clear(user_id)
 
-        # Инициализируем навигацию заново
-        await state_manager.update_data(
-            user_id,
-            current_menu=main_menu_id,
-            navigation_history=[],
-            current_state=AppStates.CURRENT_MENU,
-            user_role="newcomer"
-        )
+        # Устанавливаем новую роль в FSM
+        await state_manager.update_data(user_id, role="newcomer")
+
+        # Устанавливаем главное меню для новичка
+        main_menu_id = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+        await state_manager.navigate_to_menu(user_id, main_menu_id)
 
         # Получаем и показываем контент меню
         from telegram.handlers.handler_table import handle_table_menu
@@ -60,8 +52,6 @@ async def handle_checkout_newcomer(message: Message):
             await message.answer(text=content['text'], **kwargs)
         else:
             await message.answer("Режим новичка активирован", **kwargs)
-
-        await message.answer("Вы переключены в режим новичка")
     else:
         await message.answer("Ошибка при смене роли на новичка")
 
@@ -77,31 +67,22 @@ async def handle_checkout_employee(message: Message):
         await message.answer("❌ У вас нет прав для выполнения этой команды")
         return
 
-    # Очищаем состояние FSM
-    await state_manager.clear(user_id)
-
-    # Очищаем кеши доступа и ролей
-    await clear_user_role_cache(user_id)
-    await clear_user_access_cache(user_id)
-
     # Меняем роль в Seatable
     success = await change_user_role(user_id, "employee")
 
     if success:
-        # Устанавливаем новую роль
-        await state_manager.set_user_role(user_id, "employee")
+        # Очищаем кеш авторизации пользователя
+        clear_user_auth(user_id)
 
-        # Получаем ID главного меню для новой роли
-        main_menu_id = await state_manager.get_main_menu_id(user_id)
+        # Очищаем состояние FSM (включая историю навигации)
+        await state_manager.clear(user_id)
 
-        # Инициализируем навигацию с чистого листа
-        await state_manager.update_data(
-            user_id,
-            current_menu=main_menu_id,
-            navigation_history=[],
-            current_state=AppStates.CURRENT_MENU,
-            user_role="employee"
-        )
+        # Устанавливаем новую роль в FSM
+        await state_manager.update_data(user_id, role="employee")
+
+        # Устанавливаем главное меню для сотрудника
+        main_menu_id = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
+        await state_manager.navigate_to_menu(user_id, main_menu_id)
 
         # Получаем и показываем контент меню
         from telegram.handlers.handler_table import handle_table_menu
@@ -114,8 +95,6 @@ async def handle_checkout_employee(message: Message):
             await message.answer(text=content['text'], **kwargs)
         else:
             await message.answer("Режим сотрудника активирован", **kwargs)
-
-        await message.answer("Вы переключены в режим действующего сотрудника")
     else:
         await message.answer("Ошибка при смене роли на действующего сотрудника")
 

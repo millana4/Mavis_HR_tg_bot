@@ -57,8 +57,16 @@ def format_employee_text(emp: Dict) -> str:
     if emp.get("Raw_owner"):          # Если выводим из АТС
         parts.append(f"<b>{emp['Raw_owner']}</b>")
 
-    if emp.get("Email_mavis") or emp.get("Email_votonia") or emp.get("Email_other"):
-        parts.append(f"Email: {emp.get("Email_mavis")} {emp.get('Email_votonia')} {emp.get('Email_other')}")
+    emails = []
+    if emp.get("Email_mavis"):
+        emails.append(f"{emp['Email_mavis']} ")
+    if emp.get("Email_votonia"):
+        emails.append(f"{emp['Email_votonia']} ")
+    if emp.get("Email_other"):
+        emails.append(f"{emp['Email_other']}")
+
+    if emails:
+        parts.append(f"Email: {', '.join(emails)}")
 
     if emp.get("Internal_number"):
         parts.append(f"Внутренний телефон: {emp['Internal_number']}")

@@ -94,9 +94,7 @@ async def create_menu_keyboard(table_data: List[Dict], current_table_id: str, us
             )])
 
     # Добавляем кнопку "Назад" только если это не главное меню
-    main_menu_id = await state_manager.get_main_menu_id(user_id=int(user_id))
-
-    if current_table_id != main_menu_id:
+    if current_table_id != (Config.SEATABLE_MAIN_MENU_NEWCOMER_ID or Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID):
         inline_keyboard.append([InlineKeyboardButton(
             text="⬅️ Назад",
             callback_data="back"

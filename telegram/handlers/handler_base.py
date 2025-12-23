@@ -4,12 +4,13 @@ from aiogram import Router, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import ReplyKeyboardRemove
 
-from app.services.cache import user_access_cache, user_role_cache
+from app.services.cache import clear_user_auth, get_user_access_and_role
 from app.services.utils import normalize_phone, contains_restricted_emails
 from app.services.fsm import state_manager, AppStates
 from app.seatable_api.api_auth import register_id_messenger, check_id_messenger
 from app.seatable_api.api_users import get_role_from_st
 from app.seatable_api.api_base import fetch_table
+from config import Config
 from telegram.bot_menu import update_user_commands
 
 from telegram.keyboards import share_contact_kb
@@ -30,17 +31,21 @@ async def cmd_start(message: types.Message):
     logger.info(f"Пользователь {user_id} нажал кнопку Старт")
 
     # Проверяем, есть ли пользователь с таким id_telegram
-    has_access, current_role = await check_id_messenger(user_id)
+    has_access, current_role = await check_id_messenger(str(user_id))
     logger.info(f"Пользователь {user_id} авторизован: {has_access}, роль: {current_role}")
 
     if has_access:
-        # Получаем предыдущую роль из FSM (если есть)
-        previous_role = await state_manager.get_user_role(user_id)
+        # Получаем данные из FSM
+        user_data = await state_manager.get_data(user_id)
+        previous_role = user_data.get("role")
 
         # ВАЖНО: Если роль изменилась - сбрасываем навигацию
         if previous_role and previous_role != current_role:
             logger.info(f"Роль изменилась при старте: {previous_role} -> {current_role}, сбрасываем навигацию")
             await state_manager.clear(user_id)
+
+        # Обновляем роль в FSM
+        await state_manager.update_data(user_id, role=current_role)
 
         # Проверяем, какое отдать меню — обычное или админское
         await update_user_commands(message.bot, user_id)
@@ -62,29 +67,45 @@ async def handle_contact(message: types.Message):
     user_id = message.from_user.id
 
     normalized_phone = normalize_phone(contact.phone_number)
-    logger.info(f"Пользователь {user_id} прислал номер: {contact.phone_number} (нормализован: {normalized_phone})")
+    logger.info(
+        "Пользователь %s прислал номер: %s (нормализован: %s)",
+        user_id,
+        contact.phone_number,
+        normalized_phone
+    )
 
-    # Добавляем id_messenger пользователя в таблицу Seatable
-    success = await register_id_messenger(normalized_phone, user_id)
+    # 1. Регистрируем id_messenger в Seatable
+    success = await register_id_messenger(normalized_phone, str(user_id))
 
-    if success:
+    if not success:
         await message.answer(
-            "🎉 Вы успешно авторизовались!",
+            "🚫 Ваш номер телефона не найден в системе. "
+            "Чтобы получить доступ в бот, обратитесь, пожалуйста, к администратору.",
             reply_markup=ReplyKeyboardRemove()
         )
-        # Получаем актуальную роль после регистрации
-        has_access, current_role = await check_id_messenger(user_id)
+        return
 
-        user_access_cache[user_id] = True
-        user_role_cache[user_id] = current_role
+    # 2. Очищаем кеш авторизации (на случай повторной регистрации)
+    clear_user_auth(user_id)
 
-        # После успешной регистрации запускаем навигацию с актуальной ролью
-        await start_navigation(message=message, current_role=current_role)
-    else:
+    # 3. Получаем доступ и роль через единый auth-сервис
+    has_access, current_role = await get_user_access_and_role(user_id)
+
+    if not has_access or not current_role:
         await message.answer(
-            "🚫 Ваш номер телефона не найден в системе. Чтобы получить доступ в бот, обратитесь, пожалуйста, к администратору.",
+            "🚫 Не удалось подтвердить доступ. Обратитесь к администратору.",
             reply_markup=ReplyKeyboardRemove()
         )
+        return
+
+    # 4. Успешная авторизация
+    await message.answer(
+        "🎉 Вы успешно авторизовались!",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    # 5. Запускаем навигацию с актуальной ролью
+    await start_navigation(message=message, current_role=current_role)
 
 
 async def start_navigation(message: types.Message, current_role: str = None):
@@ -108,12 +129,15 @@ async def start_navigation(message: types.Message, current_role: str = None):
 
         # Записываем роль в FSM. Если функция определения не сработала и вернула None, то устанавливаем действующего.
         if user_role is not None:
-            await state_manager.set_user_role(user_id, user_role)
+            await state_manager.update_data(user_id, role=user_role)
         else:
-            await state_manager.set_user_role(user_id, "employee")
+            await state_manager.update_data(user_id, role="employee")
 
         # Получаем ID главного меню для роли пользователя
-        main_menu_id = await state_manager.get_main_menu_id(user_id)
+        if user_role == "newcomer":
+            main_menu_id = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+        else:
+            main_menu_id = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
         logger.info(f"Main menu ID for user {user_id}: {main_menu_id}")
 
         # Инициализация состояния для переходов по меню

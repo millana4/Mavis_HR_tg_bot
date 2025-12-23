@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Tuple
 from aiogram import Router, types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
+from app.db.roles import UserRole
 from config import Config
 
 from app.services.forms import start_form_questions, complete_form
@@ -257,7 +258,12 @@ async def finish_form(message: Message, form_data: Dict):
         parse_mode = content.get('parse_mode')
 
     # Создаем клавиатуру для возврата
-    main_menu_id = await state_manager.get_main_menu_id(user_id=user_id)
+    user_state = await state_manager.get_data(user_id=user_id)
+    user_role = user_state.get('role')
+    if user_role == UserRole.NEWCOMER.value:
+        main_menu_id = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+    else:
+        main_menu_id = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -397,7 +403,22 @@ async def handle_form_cancel(callback: types.CallbackQuery):
     )
 
     # Получаем главное меню для возврата
-    main_menu_id = await state_manager.get_main_menu_id(user_id=user_id)
+    user_state = await state_manager.get_data(user_id=user_id)
+    user_role = user_state.get('role')
+    if user_role == UserRole.NEWCOMER.value:
+        main_menu_id = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+    else:
+        main_menu_id = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="⬅️ В главное меню",
+                callback_data=f"menu:{main_menu_id}"
+            )]
+        ]
+    )
+
 
     # Создаем клавиатуру для возврата в главное меню
     keyboard = InlineKeyboardMarkup(

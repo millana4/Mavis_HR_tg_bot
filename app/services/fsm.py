@@ -1,9 +1,11 @@
 import logging
-from cachetools import TTLCache
+import sqlite3
+import os
 from typing import Dict, Any, Optional, List
+import json
+from pathlib import Path
 
 from config import Config
-
 
 logger = logging.getLogger(__name__)
 
@@ -17,138 +19,166 @@ class AppStates:
     WAITING_FOR_COMPANY_GROUP_SEARCH = "waiting_for_company_group_search"
     WAITING_FOR_SHOP_TITLE_SEARCH = "waiting_for_shop_title_search"
     WAITING_FOR_DRUGSTORE_TITLE_SEARCH = "waiting_for_drugstore_title_search"
-    USER_ROLE = "user_role"
 
 
 class StateManager:
-    def __init__(self, maxsize=1000, ttl=3600):
-        self._cache = TTLCache(maxsize=maxsize, ttl=ttl)
+    def __init__(self, db_path: str = None):
+        self._state: Dict[int, Dict[str, Any]] = {}
 
-        # ID главных меню для разных ролей
+        # Устанавливаем путь к базе данных в корне проекта
+        if db_path is None:
+            project_root = Path(__file__).parent.parent.parent  # app/services -> app -> project_root
+            self.db_path = str(project_root / "fsm_state.db")
+        else:
+            self.db_path = db_path
+
+        logger.info(f"FSM database path: {self.db_path}")
+
+        self._init_db()
+        self.load_from_db()
+
         self.SEATABLE_MAIN_MENU_EMPLOYEE_ID = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
         self.SEATABLE_MAIN_MENU_NEWCOMER_ID = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
 
+    # =========================
+    # DB
+    # =========================
+    def _init_db(self):
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_state (
+                user_id INTEGER PRIMARY KEY,
+                state_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
 
+    def save_to_db(self):
+        try:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            cur = conn.cursor()
+
+            cur.execute("DELETE FROM user_state")
+
+            for user_id, state in self._state.items():
+                # Отладка: что сохраняем
+                logger.info(f"Saving user {user_id} state: {state}")
+
+                # Сохраняем в JSON
+                state_json = json.dumps(state, ensure_ascii=False)
+                logger.info(f"JSON to save: {state_json}")
+
+                cur.execute(
+                    "INSERT INTO user_state (user_id, state_json) VALUES (?, ?)",
+                    (user_id, state_json),
+                )
+
+            conn.commit()
+            conn.close()
+            logger.info(f"FSM state saved to SQLite: {len(self._state)} users")
+        except Exception as e:
+            logger.error(f"Error saving FSM state: {e}")
+
+    def load_from_db(self):
+        try:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            cur = conn.cursor()
+
+            cur.execute("SELECT user_id, state_json FROM user_state")
+            rows = cur.fetchall()
+
+            loaded_count = 0
+            for user_id, state_json in rows:
+                try:
+                    # Отладка: что пытаемся загрузить
+                    logger.debug(f"Loading user {user_id}, raw JSON: {state_json[:100]}...")
+
+                    self._state[user_id] = json.loads(state_json)
+                    loaded_count += 1
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON decode error for user {user_id}: {e}")
+                    logger.error(f"Problematic JSON: {state_json}")
+
+            conn.close()
+            logger.info(f"FSM state loaded from SQLite: {loaded_count} users of {len(rows)}")
+        except Exception as e:
+            logger.error(f"Error loading FSM state from database: {e}")
+            self._state = {}
+
+    # =========================
+    # BASE
+    # =========================
     async def update_data(self, user_id: int, **kwargs):
-        """Основной метод для обновления любых данных пользователя"""
-        user_data = self._cache.get(user_id, {})
+        user_data = self._state.get(user_id, {})
         user_data.update(kwargs)
-        self._cache[user_id] = user_data
-        logger.info(f"User {user_id} data updated: {list(kwargs.keys())}")
-
+        self._state[user_id] = user_data
 
     async def get_data(self, user_id: int) -> Dict[str, Any]:
-        """Получить все данные пользователя"""
-        return self._cache.get(user_id, {}).copy()
+        return self._state.get(user_id, {}).copy()
 
-
-    async def get_user_role(self, user_id: int) -> Optional[str]:
-        """Получить роль пользователя"""
-        user_data = self._cache.get(user_id, {})
-        return user_data.get(AppStates.USER_ROLE)
-
-
-    async def set_user_role(self, user_id: int, role: str):
-        """Установить роль пользователя"""
-        await self.update_data(user_id, **{AppStates.USER_ROLE: role})
-        logger.info(f"User {user_id} role set to: {role}")
-
-
+    # =========================
+    # MENU
+    # =========================
     async def get_current_menu(self, user_id: int) -> Optional[str]:
-        """Получить текущее меню пользователя"""
-        user_data = self._cache.get(user_id, {})
-        return user_data.get(AppStates.CURRENT_MENU)
+        return self._state.get(user_id, {}).get(AppStates.CURRENT_MENU)
 
-
-    async def set_current_menu(self, user_id: int, menu_id: str):
-        """Установить текущее меню пользователя"""
-        await self.update_data(user_id, **{AppStates.CURRENT_MENU: menu_id})
-
-
-    async def get_main_menu_id(self, user_id: int) -> str:
-        """Получить ID главного меню в зависимости от роли пользователя"""
-        user_data = self._cache.get(user_id, {})
-        role = user_data.get(AppStates.USER_ROLE)
-
-        if role == "newcomer" and self.SEATABLE_MAIN_MENU_NEWCOMER_ID:
-            return self.SEATABLE_MAIN_MENU_NEWCOMER_ID
-        else:
-            # По умолчанию возвращаем меню для employee
-            return self.SEATABLE_MAIN_MENU_EMPLOYEE_ID
-
-
-    async def clear(self, user_id: int):
-        """Очистить данные пользователя"""
-        if user_id in self._cache:
-            del self._cache[user_id]
-            logger.info(f"User {user_id} data cleared")
-
-
-    async def is_user_employee(self, user_id: int) -> bool:
-        """Проверить, является ли пользователь сотрудником"""
-        role = await self.get_user_role(user_id)
-        return role == "employee"
-
-
-    async def is_user_newcomer(self, user_id: int) -> bool:
-        """Проверить, является ли пользователь новичком"""
-        role = await self.get_user_role(user_id)
-        return role == "newcomer"
-
-
-    # Методы для навигации (специализированные методы)
     async def navigate_to_menu(self, user_id: int, menu_id: str):
-        """Переход в новое меню - добавляем в историю"""
-        user_data = self._cache.get(user_id, {})
+        user_data = self._state.get(user_id, {})
 
-        # Инициализируем историю если её нет
-        if 'navigation_history' not in user_data:
-            user_data['navigation_history'] = []
+        history = user_data.setdefault("navigation_history", [])
+        if AppStates.CURRENT_MENU in user_data:
+            history.append(user_data[AppStates.CURRENT_MENU])
 
-        # Добавляем текущее меню в историю
-        if 'current_menu' in user_data:
-            user_data['navigation_history'].append(user_data['current_menu'])
-
-        # Устанавливаем новое меню
-        user_data['current_menu'] = menu_id
-        self._cache[user_id] = user_data
-
-        logger.info(f"User {user_id} navigated to menu: {menu_id}")
-
-
-    async def navigate_to_main_menu(self, user_id: int) -> str:
-        """Переход в главное меню в зависимости от роли пользователя"""
-        main_menu_id = await self.get_main_menu_id(user_id)
-        await self.navigate_to_menu(user_id, main_menu_id)
-        return main_menu_id
-
+        user_data[AppStates.CURRENT_MENU] = menu_id
+        self._state[user_id] = user_data
 
     async def navigate_back(self, user_id: int) -> Optional[str]:
-        """Возврат к предыдущему меню"""
-        user_data = self._cache.get(user_id, {})
+        user_data = self._state.get(user_id, {})
+        history = user_data.get("navigation_history", [])
 
-        if not user_data.get('navigation_history'):
-            logger.debug(f"No navigation history for user {user_id}, returning to main menu")
-            # Если истории нет - возвращаем главное меню по роли
-            main_menu_id = await self.get_main_menu_id(user_id)
-            user_data['current_menu'] = main_menu_id
-            self._cache[user_id] = user_data
-            return main_menu_id
+        if not history:
+            return None
 
-        # Получаем предыдущее меню из истории
-        previous_menu = user_data['navigation_history'].pop()
-        user_data['current_menu'] = previous_menu
-        self._cache[user_id] = user_data
+        previous_menu = history.pop()
+        user_data[AppStates.CURRENT_MENU] = previous_menu
+        self._state[user_id] = user_data
 
-        logger.debug(f"User {user_id} navigated back to: {previous_menu}")
         return previous_menu
 
+    # =========================
+    # CLEAR
+    # =========================
+    async def clear(self, user_id: int):
+        if user_id in self._state:
+            del self._state[user_id]
+            logger.info("FSM cleared for user %s", user_id)
 
-    async def get_navigation_history(self, user_id: int) -> List[str]:
-        """Получить историю навигации пользователя"""
-        user_data = self._cache.get(user_id, {})
-        return user_data.get('navigation_history', []).copy()
+
+    # =========================
+    # DEBUG
+    # =========================
+    def debug_print_db(self):
+        """Вывести содержимое БД для отладки"""
+        try:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            cur = conn.cursor()
+
+            cur.execute("SELECT user_id, state_json FROM user_state")
+            rows = cur.fetchall()
+
+            print("=== DEBUG: Database contents ===")
+            for user_id, state_json in rows:
+                print(f"User ID: {user_id}")
+                print(f"JSON: {state_json}")
+                print("-" * 40)
+
+            conn.close()
+        except Exception as e:
+            print(f"Error reading DB: {e}")
 
 
-# Глобальный экземпляр
 state_manager = StateManager()

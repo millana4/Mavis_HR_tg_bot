@@ -38,3 +38,7 @@ Thumbs.db
 
 # Кэш pip
 pip-wheel-metadata/
+
+/fsm_state.db
+
+/app/db/utils/raw_emails.txt

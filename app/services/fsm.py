@@ -170,7 +170,7 @@ class StateManager:
             cur.execute("SELECT user_id, state_json FROM user_state")
             rows = cur.fetchall()
 
-            print("=== DEBUG: Database contents ===")
+            print("=== DEBUG: FSM database ===")
             for user_id, state_json in rows:
                 print(f"User ID: {user_id}")
                 print(f"JSON: {state_json}")

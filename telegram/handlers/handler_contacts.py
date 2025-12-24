@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 AUTODELETE_TIMER = 3600
 
 # Изображения для справочника
-BANNER_CONTACTS="http://seadoc.r2d.ru/f/c75d34f778644e11a3f7/?dl=1"
+BANNER_CONTACTS=""
 
 
 # Хендлер для кнопки с контактами

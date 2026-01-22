@@ -12,7 +12,7 @@ from telegram.content import prepare_telegram_message
 
 logger = logging.getLogger(__name__)
 
-sending_time = time(11, 0)
+sending_time = time(11, 00)
 
 
 class PulseSender:

@@ -12,7 +12,7 @@ from app.db.contacts import give_employee_data, format_employee_text, give_unit_
 from app.seatable_api.api_contacts import get_employees, get_department_list
 
 from telegram.handlers.filters import NameSearchFilter, SearchTypeFilter, ShopSearchFilter, DrugstoreSearchFilter
-from telegram.keyboards import SEARCH_TYPE_KEYBOARD, SEARCH_COMPANY_GROUP
+from telegram.keyboards import SEARCH_TYPE_KEYBOARD, SEARCH_COMPANY_GROUP, BACK_TO_SEARCH_TYPE, BACK_TO_DEPARTMENT_TYPE
 from telegram.utils import check_access
 
 
@@ -128,8 +128,9 @@ async def handle_name_search(callback_query: types.CallbackQuery):
 
         # Просим ввести ФИО
         await callback_query.message.answer(
-            "Укажите, пожалуйста, фамилию и/или полное имя сотрудника, например: Иван Соколов или Соколов Иван, "
-            "или Соколов, или просто Иван."
+            text="Укажите, пожалуйста, фамилию и/или полное имя сотрудника, например: Иван Соколов или Соколов Иван, "
+            "или Соколов, или просто Иван.",
+            reply_markup=BACK_TO_SEARCH_TYPE,
         )
 
         # Устанавливаем состояние ожидания ввода ФИО
@@ -348,7 +349,7 @@ async def create_department_keyboard() -> InlineKeyboardMarkup:
     # Добавляем кнопку "Назад"
     inline_keyboard.append([InlineKeyboardButton(
         text="⬅️ Назад",
-        callback_data="back"
+        callback_data="department_back"
     )])
 
     return InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
@@ -402,10 +403,11 @@ async def handle_shop_search(callback_query: types.CallbackQuery):
 
         # Просим ввести адрес в текстовое поле
         await callback_query.message.answer(
-            "Укажите, пожалуйста, часть адреса магазина, например: «Сертолово» или «Варшавская»"
+            text="Укажите, пожалуйста, часть адреса магазина, например: «Сертолово» или «Варшавская»",
+            reply_markup=BACK_TO_DEPARTMENT_TYPE,
         )
 
-        # Устанавливаем состояние ожидания ввода ФИО
+        # Устанавливаем состояние ожидания ввода названия магазина
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_SHOP_TITLE_SEARCH)
         logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_SHOP_TITLE_SEARCH}")
 
@@ -456,7 +458,10 @@ async def handle_drugstore_search(callback_query: types.CallbackQuery):
         # Убираем инлайн-клавиатуру
         await callback_query.message.edit_reply_markup(reply_markup=None)
 
-        await callback_query.message.answer("Укажите, пожалуйста, часть адреса аптеки, например, «Савушкина»")
+        await callback_query.message.answer(
+            text="Укажите, пожалуйста, часть адреса аптеки, например, «Савушкина»",
+            reply_markup=BACK_TO_DEPARTMENT_TYPE,
+        )
 
         # Устанавливаем состояние ожидания ввода
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_DRUGSTORE_TITLE_SEARCH)
@@ -541,7 +546,7 @@ async def show_unit(searched_unit: List[Dict], message: Message):
     )
 
 
-# Обработчик кнопки "Назад" из результатов поиска
+# Обработчик кнопки "Назад", который возвращает к выбору типа поиска Сотрудники/Подразделения
 @router.callback_query(F.data == "search_back")
 async def handle_search_back(callback: types.CallbackQuery):
     """Обрабатывает кнопку Назад из результатов поиска — возвращает к выбору типа поиска"""
@@ -577,10 +582,57 @@ async def handle_search_back(callback: types.CallbackQuery):
                 reply_markup=SEARCH_TYPE_KEYBOARD,
             )
 
-
-
         # Устанавливаем состояние ожидания выбора типа поиска
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_SEARCH_TYPE)
+
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Search back (inline) error: {str(e)}", exc_info=True)
+        await callback.answer("Ошибка при возврате", show_alert=True)
+
+
+# Обработчик кнопки "Назад", который возвращает к выбору подразделения Телефоны отделов/Магазины/Аптеки
+@router.callback_query(F.data == "department_back")
+async def handle_department_back(callback: types.CallbackQuery):
+    """
+    Обрабатывает кнопку Назад — возвращает к выбору типа подразделения Телефоны отделов/Магазины/Аптеки.
+    Кнопка нужна, если пользователь передумал искать внутри типа подразделения.
+    """
+    try:
+        user_id = callback.from_user.id
+
+        logger.info(f"Сработал «Назад» к типу поиска по подразделениям handle_department_back")
+
+        # Проверяем права доступа и выходим если нет доступа
+        has_access = await check_access(callback_query=callback)
+        if not has_access:
+            return
+
+        # Удаляем сообщение с результатами
+        try:
+            await callback.message.delete()
+        except:
+            pass
+
+        # Возвращаем к выбору типа поиска
+        if BANNER_CONTACTS != "":
+            # Если есть изображение - отправляем его с описанием
+            await callback.message.answer_photo(
+                photo=BANNER_CONTACTS,
+                caption="Какие подразделения нужны?",
+                reply_markup=SEARCH_COMPANY_GROUP,
+                parse_mode='HTML'
+            )
+        else:
+            # Если нет изображения, отправляем просто текст
+            await callback.message.answer(
+                text="Какие подразделения нужны?",
+                reply_markup=SEARCH_COMPANY_GROUP,
+            )
+
+        # Устанавливаем состояние ожидания выбора типа поиска
+        await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_COMPANY_GROUP_SEARCH)
 
         await callback.answer()
 

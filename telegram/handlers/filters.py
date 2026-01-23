@@ -22,7 +22,8 @@ class NameSearchFilter(Filter):
 class SearchTypeFilter(Filter):
     async def __call__(self, message: types.Message) -> bool:
         user_data = await state_manager.get_data(message.from_user.id)
-        return user_data.get('current_state') == AppStates.WAITING_FOR_SEARCH_TYPE
+        current_state = user_data.get('current_state')
+        return current_state in [AppStates.WAITING_FOR_SEARCH_TYPE, AppStates.WAITING_FOR_SEGMENT_SEARCH]
 
 
 class ShopSearchFilter(Filter):

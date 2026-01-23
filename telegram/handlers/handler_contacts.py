@@ -12,9 +12,9 @@ from app.db.contacts import give_employee_data, format_employee_text, give_unit_
 from app.seatable_api.api_contacts import get_employees, get_department_list
 
 from telegram.handlers.filters import NameSearchFilter, SearchTypeFilter, ShopSearchFilter, DrugstoreSearchFilter
-from telegram.keyboards import SEARCH_TYPE_KEYBOARD, SEARCH_COMPANY_GROUP, BACK_TO_SEARCH_TYPE, BACK_TO_DEPARTMENT_TYPE
+from telegram.keyboards import SEARCH_TYPE_KEYBOARD, SEARCH_COMPANY_GROUP, BACK_TO_SEARCH_TYPE, BACK_TO_DEPARTMENT_TYPE, \
+    SEARCH_SEGMENT_KEYBOARD
 from telegram.utils import check_access
-
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 AUTODELETE_TIMER = 3600
 
 # Изображения для справочника
-BANNER_CONTACTS=""
+BANNER_CONTACTS = ""
 
 
 # Хендлер для кнопки с контактами
@@ -70,12 +70,12 @@ async def process_contacts_callback(callback_query: types.CallbackQuery):
         await callback_query.answer("Ошибка открытия контактов", show_alert=True)
 
 
-# Обработчик текстового ввода в состоянии выбора типа поиска — запускает поиск по ФИО
+# Обработчик текстового ввода в состоянии выбора типа поиска или сегмента — запускает поиск по ФИО
 @router.message(F.text, F.content_type == 'text', SearchTypeFilter())
 async def handle_text_input_during_search_selection(message: Message):
     """
     Обрабатывает неожидаемое действие пользователя.
-    Когда бот ждет выбора типа поиска, пользователь не выбирает тип, а сразу вводит имя.
+    Когда бот ждет выбора типа поиска или сегмента, пользователь не выбирает тип, а сразу вводит имя.
     Тогда эта функция автоматически запускает поиск по ФИО.
     """
     try:
@@ -126,16 +126,59 @@ async def handle_name_search(callback_query: types.CallbackQuery):
         # Убираем инлайн-клавиатуру
         await callback_query.message.edit_reply_markup(reply_markup=None)
 
+        # Просим выбрать сегмент холдинга - Мавис, Вотоня или по всем
+        await callback_query.message.answer(
+            text="В каком сегменте искать?",
+            reply_markup=SEARCH_SEGMENT_KEYBOARD,
+        )
+
+        # Устанавливаем состояние ожидания ввода сегмета
+        await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_SEGMENT_SEARCH)
+        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_SEGMENT_SEARCH}")
+
+        await callback_query.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка при выборе сегмента холдинга: {str(e)}", exc_info=True)
+        await callback_query.answer("Ошибка при выборе сегмента холдинга")
+
+
+# Обработчик выбора сегмента
+@router.callback_query(
+    lambda c: c.data in ("search_mavis_segment", "search_votonia_segment", "search_both_segments")
+)
+async def handle_name_search(callback_query: types.CallbackQuery):
+    """Обрабатывает выбор поиска по ФИО"""
+    try:
+        user_id = callback_query.from_user.id
+
+        # Убираем инлайн-клавиатуру
+        await callback_query.message.edit_reply_markup(reply_markup=None)
+
+        # Записываем сегмент, который выбрал пользователь из callback_data
+        segment_map = {
+            "search_mavis_segment": "mavis",
+            "search_votonia_segment": "votonia",
+            "search_both_segments": "both"
+        }
+        segment = segment_map[callback_query.data]
+
+        # Устанавливаем новое состояние и сохраняем выбранный сегмент в FSM
+        await state_manager.update_data(
+            user_id,
+            current_state=AppStates.WAITING_FOR_NAME_SEARCH,
+            selected_segment=segment
+        )
+
+        logger.info(f"Пользователь {user_id} выбрал сегмент: {segment}")
+        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_NAME_SEARCH}")
+
         # Просим ввести ФИО
         await callback_query.message.answer(
             text="Укажите, пожалуйста, фамилию и/или полное имя сотрудника, например: Иван Соколов или Соколов Иван, "
-            "или Соколов, или просто Иван.",
+                 "или Соколов, или просто Иван.",
             reply_markup=BACK_TO_SEARCH_TYPE,
         )
-
-        # Устанавливаем состояние ожидания ввода ФИО
-        await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_NAME_SEARCH)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_NAME_SEARCH}")
 
         await callback_query.answer()
 
@@ -163,13 +206,20 @@ async def process_name_input(message: Message):
             await message.answer("Пожалуйста, введите ФИО сотрудника:")
             return
 
-        logger.info(f"Поиск по ФИО: {search_query}")
+        # Получаем выбранный сегмент из state_manager
+        selected_segment = user_data.get('selected_segment')
+
+        # Определяем сегмент из callback_data (если selected_segment еще не сохранен)
+        if not selected_segment:
+            selected_segment = "both"  # по умолчанию ищем во всех
+
+        logger.info(f"Поиск по ФИО: {search_query}, сегмент: {selected_segment}")
 
         # Обращается по АПИ в таблицу со справочником и возвращает json с данными всех сотрудников
         employees = await get_employees(Config.SEATABLE_PIVOT_TABLE_ID)
 
         # После поиска показываем результаты и кнопку Назад
-        searched_employees = await give_employee_data("FIO", search_query, employees)
+        searched_employees = await give_employee_data("FIO", search_query, employees, selected_segment)
 
         # Выводит сообщение с результатами поиска и показывает его, пока пользователь не нажмет Назад
         await show_employee(searched_employees, message)

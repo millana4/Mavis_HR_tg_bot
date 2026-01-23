@@ -1,17 +1,21 @@
+import pprint
 import re
 import logging
+import pprint
 from typing import List, Dict
 
 
 logger = logging.getLogger(__name__)
 
 
-async def give_employee_data(search_type: str, search_query: str, employees: List[Dict]) -> List[Dict]:
+async def give_employee_data(search_type: str, search_query: str, employees: List[Dict],
+                             selected_segment: str = None) -> List[Dict]:
     """
     Ищет сотрудников в данных справочника по строке search_query в списке employees.
     На вход нужно передать тип поиска:
     - По ФИО: "FIO"
     - По отделу: "Department"
+    - selected_segment: "mavis", "votonia", "both" или None (если не фильтровать)
     Возвращает список с данными найденных сотрудников.
     """
     results = []
@@ -23,7 +27,28 @@ async def give_employee_data(search_type: str, search_query: str, employees: Lis
     query_words = re.split(r"\s+", query)
 
     for emp in employees:
-        # Берём ФИО, если оно есть
+        # Проверяем сегмент, если указан
+        if selected_segment and selected_segment != "both":
+            company_segment = emp.get('Company_segment', [])
+            if not company_segment:
+                continue
+
+            # Определяем, подходит ли сотрудник под выбранный сегмент
+            segment_allowed = False
+
+            if selected_segment == "mavis":
+                # Для Мавис: МАВИС или ОБА
+                if company_segment[0] in ["МАВИС", "ОБА"]:
+                    segment_allowed = True
+            elif selected_segment == "votonia":
+                # Для Вотоня: ВОТОНЯ или ОБА
+                if company_segment[0] in ["ВОТОНЯ", "ОБА"]:
+                    segment_allowed = True
+
+            if not segment_allowed:
+                continue
+
+        # Проверяем поле для поиска (ФИО или отдел)
         name_field = emp.get(search_type, "")
         if not name_field:
             continue
@@ -41,7 +66,7 @@ async def give_employee_data(search_type: str, search_query: str, employees: Lis
             if f"{w1} {w2}" in name_norm or f"{w2} {w1}" in name_norm:
                 results.append(emp)
 
-    logger.info(f"По запросу '{search_query}' найдено {len(results)} сотрудник(ов)")
+    logger.info(f"По запросу '{search_query}' (сегмент: {selected_segment}) найдено {len(results)} сотрудник(ов)")
     return results
 
 

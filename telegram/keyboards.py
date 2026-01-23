@@ -15,6 +15,16 @@ SEARCH_TYPE_KEYBOARD = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="⬅️ Назад", callback_data="back")]
 ])
 
+# Клавиатура для выбора сегмента холдинга
+SEARCH_SEGMENT_KEYBOARD = InlineKeyboardMarkup(inline_keyboard=[
+    [
+        InlineKeyboardButton(text="Мавис", callback_data="search_mavis_segment"),
+        InlineKeyboardButton(text="Вотоня", callback_data="search_votonia_segment"),
+    ],
+    [InlineKeyboardButton(text="Все сотрудники", callback_data="search_both_segments")],
+    [InlineKeyboardButton(text="⬅️ Назад", callback_data="search_back")]
+])
+
 # Клавиатура для выбора подразделений
 SEARCH_COMPANY_GROUP = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Телефоны отделов «Мавис»", callback_data="search_by_department")],
@@ -28,7 +38,12 @@ BACK_TO_SEARCH_TYPE = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="⬅️ Назад", callback_data="search_back")],
 ])
 
-# Клавиатура с одной кнопкой Назад -> Возвращает к выбору типа поиска SEARCH_TYPE_KEYBOARD
+# Клавиатура с одной кнопкой Назад -> Возвращает к выбору типа подразделения SEARCH_COMPANY_GROUP
 BACK_TO_DEPARTMENT_TYPE = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="⬅️ Назад", callback_data="department_back")],
+])
+
+# Клавиатура с одной кнопкой Назад -> Возвращает к выбору сегмента холдинга
+BACK_TO_SEGMENT = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="⬅️ Назад", callback_data="segment_back")],
 ])

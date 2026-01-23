@@ -14,6 +14,8 @@ class AppStates:
     CURRENT_MENU = "current_menu"
     FORM_DATA = "form_data"
     WAITING_FOR_SEARCH_TYPE = "waiting_for_search_type"
+    WAITING_FOR_SEGMENT_SEARCH = "waiting_for_segment_search"
+    SEGMENT_TO_SEARCH = "segment_to_search"
     WAITING_FOR_NAME_SEARCH = "waiting_for_name_search"
     WAITING_FOR_DEPARTMENT_SEARCH = "waiting_for_department_search"
     WAITING_FOR_COMPANY_GROUP_SEARCH = "waiting_for_company_group_search"

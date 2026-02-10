@@ -4,7 +4,7 @@ from aiogram.types import BotCommand, BotCommandScopeChat
 
 from config import Config
 from app.services.broadcast import is_user_admin
-from app.seatable_api.api_base import fetch_table
+from app.db.table_data import fetch_table
 
 
 logger = logging.getLogger(__name__)

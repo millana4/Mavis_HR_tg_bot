@@ -10,7 +10,7 @@ from app.services.utils import contains_restricted_emails
 from config import Config
 from app.services.fsm import state_manager
 from app.services.forms import is_form
-from app.seatable_api.api_base import fetch_table
+from app.db.table_data import fetch_table
 
 from telegram.handlers.handler_form import process_form
 from telegram.utils import check_access

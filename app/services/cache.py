@@ -1,7 +1,7 @@
 import logging
 from cachetools import TTLCache
 
-from app.seatable_api.api_auth import check_id_messenger
+from app.db.auth import check_id_messenger
 
 logger = logging.getLogger(__name__)
 

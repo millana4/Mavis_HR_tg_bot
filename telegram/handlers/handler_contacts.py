@@ -5,15 +5,15 @@ from typing import List, Dict
 from aiogram import Router, types, F, Bot
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
-from app.seatable_api.api_base import fetch_table
+from app.db.table_data import fetch_table
 from config import Config
 from app.services.fsm import state_manager, AppStates
-from app.db.contacts import give_employee_data, format_employee_text, give_unit_data, format_unit_text
-from app.seatable_api.api_contacts import get_employees, get_department_list
+from app.db.contacts import give_employee_data, format_employee_text, give_unit_data, format_unit_text, \
+    get_department_list
 
 from telegram.handlers.filters import NameSearchFilter, SearchTypeFilter, ShopSearchFilter, DrugstoreSearchFilter
-from telegram.keyboards import SEARCH_TYPE_KEYBOARD, SEARCH_COMPANY_GROUP, BACK_TO_SEARCH_TYPE, BACK_TO_DEPARTMENT_TYPE, \
-    SEARCH_SEGMENT_KEYBOARD
+from telegram.keyboards import SEARCH_TYPE_KEYBOARD, SEARCH_COMPANY_GROUP, BACK_TO_SEARCH_TYPE, \
+    BACK_TO_DEPARTMENT_TYPE, SEARCH_SEGMENT_KEYBOARD
 from telegram.utils import check_access
 
 router = Router()
@@ -103,7 +103,7 @@ async def handle_text_input_during_search_selection(message: Message):
         logger.info(f"Автоматический поиск по ФИО: {search_query}")
 
         # Получаем данные сотрудников
-        employees = await get_employees(Config.SEATABLE_PIVOT_TABLE_ID)
+        employees = await fetch_table(table_id=Config.PIVOT_TABLE_ID, app='USER')
 
         # Выполняем поиск
         searched_employees = await give_employee_data("FIO", search_query, employees)
@@ -216,7 +216,7 @@ async def process_name_input(message: Message):
         logger.info(f"Поиск по ФИО: {search_query}, сегмент: {selected_segment}")
 
         # Обращается по АПИ в таблицу со справочником и возвращает json с данными всех сотрудников
-        employees = await get_employees(Config.SEATABLE_PIVOT_TABLE_ID)
+        employees = await fetch_table(table_id=Config.PIVOT_TABLE_ID, app="USER")
 
         # После поиска показываем результаты и кнопку Назад
         searched_employees = await give_employee_data("FIO", search_query, employees, selected_segment)
@@ -428,7 +428,7 @@ async def process_department_input(callback_query: types.CallbackQuery):
         await callback_query.message.edit_reply_markup(reply_markup=None)
 
         # Получаем данные сотрудников
-        employees = await get_employees(Config.SEATABLE_ATS_BOOK_ID)
+        employees = await fetch_table(table_id=Config.ATS_BOOK_ID, app="USER")
 
         # Фильтруем по отделу
         searched_employees = await give_employee_data("Department", search_query, employees)

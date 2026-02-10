@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 from aiogram import Router, types, F
@@ -11,7 +10,7 @@ from config import Config
 
 from app.services.forms import start_form_questions, complete_form
 from app.services.fsm import state_manager, AppStates
-from app.seatable_api.api_forms import fetch_table, save_form_answers
+from app.services.forms import save_form_answers
 
 from telegram.handlers.filters import FormFilter
 from telegram.utils import check_access
@@ -288,7 +287,7 @@ async def finish_form(message: Message, form_data: Dict):
 async def notify_feedback_admins(bot, user_id: int, form_data: Dict):
     """Уведомляет администраторов о новом обращении через форму"""
     try:
-        from app.seatable_api.api_base import fetch_table
+        from app.db.table_data import fetch_table
         from config import Config
         from datetime import datetime
 

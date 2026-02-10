@@ -2,6 +2,8 @@ import logging
 from typing import List, Dict, Optional
 from datetime import datetime
 
+from config import Config
+from app.db.nocodb_client import NocoDBClient
 
 logger = logging.getLogger(__name__)
 
@@ -117,3 +119,48 @@ async def complete_form(form_state: Dict, user_id: int) -> Dict:
         "final_message": form_state.get("final_message"),
         "timestamp": datetime.now().isoformat()
     }
+
+
+async def save_form_answers(form_data: Dict) -> bool:
+    """Сохраняет ответы формы в таблицу ответов NocoDB"""
+    logger.info("Начало сохранения ответов формы")
+
+    try:
+        # Получаем данные пользователя
+        async with NocoDBClient() as client:
+            users = await client.get_all(table_id=Config.AUTH_TABLE_ID)
+
+            # Добавляем данные пользователя в form_data
+            for user in users:
+                current_id = str(user.get('ID_messenger'))
+                if current_id == str(form_data.get('user_id')):
+                    form_data['user_fio'] = user.get('FIO')
+                    form_data['user_phone'] = user.get('Phone')
+                    break
+
+        # Подготавливаем данные для записи
+        prepared_data = await prepare_data_to_post_in_seatable(form_data)
+        if not prepared_data:
+            logger.error("Не удалось подготовить данные для сохранения")
+            return False
+
+        row_data = prepared_data['row_data']
+        answers_table_id = prepared_data['table_id']
+
+        logger.info(f"Данные для записи: {row_data}")
+
+        # Записываем ответы (NocoDB проигнорирует несуществующие колонки)
+        async with NocoDBClient() as client:
+            logger.info(f"Отправка данных в таблицу ответов {answers_table_id}")
+            result = await client.create_record(table_id=answers_table_id, data=row_data)
+
+            if result:
+                logger.info(f"Ответы успешно сохранены. ID новой записи: {result[0].get('Id')}")
+                return True
+            else:
+                logger.error("Не удалось сохранить ответы")
+                return False
+
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении ответов: {e}", exc_info=True)
+        return False

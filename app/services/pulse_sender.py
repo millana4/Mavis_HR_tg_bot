@@ -1,12 +1,12 @@
 import logging
-from datetime import datetime, date, time
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime, time
+from typing import Dict, List, Optional
 import asyncio
 from aiogram import Bot
 
+from app.db.nocodb_client import NocoDBClient
 from config import Config
-from app.seatable_api.api_base import fetch_table
-from app.seatable_api.api_pulse import get_pulse_tasks
+from app.db.table_data import fetch_table
 from telegram.content import prepare_telegram_message
 
 
@@ -81,7 +81,11 @@ class PulseSender:
     async def _get_tasks_for_today(self) -> List[Dict]:
         """Получает задачи которые нужно отправить сегодня"""
         try:
-            tasks = await get_pulse_tasks()
+            from app.db.nocodb_client import NocoDBClient
+
+            async with NocoDBClient() as client:
+                tasks = await client.get_all(table_id=Config.PULSE_TASKS_ID)
+
             if not tasks:
                 logger.info("Нет задач в таблице пульс-опросов")
                 return []
@@ -311,46 +315,26 @@ class PulseSender:
 
     async def _update_task_status(self, task_id: str, status: str) -> bool:
         """
-        Обновляет статус задачи
+        Обновляет статус задачи в NocoDB
         """
         try:
             if not task_id:
                 return False
-
-            # Получаем токен для базы пульс-опросов
-            from app.seatable_api.api_base import get_base_token
-            import aiohttp
-
-            token_data = await get_base_token(app='PULSE')
-            if not token_data:
-                return False
-
-            url = f"{token_data['dtable_server'].rstrip('/')}/api/v1/dtables/{token_data['dtable_uuid']}/rows/"
-
-            headers = {
-                "Authorization": f"Bearer {token_data['access_token']}",
-                "Accept": "application/json",
-                "Content-Type": "application/json"
+            # Подготавливаем данные для обновления
+            update_data = {
+                "Status": status,
+                "Sent_date": datetime.now().isoformat() if status == 'send' else None
             }
 
-            payload = {
-                "table_id": Config.SEATABLE_PULSE_TASKS_ID,
-                "row_id": task_id,
-                "row": {
-                    "Status": status,
-                    "Sent_date": datetime.now().isoformat() if status == 'send' else None
-                }
-            }
+            async with NocoDBClient() as client:
+                await client.update_record(
+                    table_id=Config.PULSE_TASKS_ID,
+                    record_id=task_id,
+                    data=update_data
+                )
 
-            async with aiohttp.ClientSession() as session:
-                async with session.put(url, json=payload, headers=headers) as response:
-                    if response.status == 200:
-                        logger.info(f"Статус задачи {task_id} обновлен на {status}")
-                        return True
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Ошибка обновления статуса: {response.status} - {error_text}")
-                        return False
+                logger.info(f"Статус задачи {task_id} обновлен на {status}")
+                return True
 
         except Exception as e:
             logger.error(f"Ошибка при обновлении статуса задачи: {e}")

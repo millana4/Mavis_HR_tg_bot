@@ -1,11 +1,38 @@
-import pprint
 import re
 import logging
-import pprint
 from typing import List, Dict
 
 
 logger = logging.getLogger(__name__)
+
+
+async def get_department_list() -> List[str]:
+    """
+    Получает список отделов из таблицы ATS_BOOK_ID.
+    Запрашивает все записи, извлекает уникальные значения поля Department.
+    """
+    try:
+        from app.db.nocodb_client import NocoDBClient
+        from config import Config
+
+        departments = set()
+
+        async with NocoDBClient() as client:
+            # Получаем все записи из таблицы ATS_BOOK_ID
+            records = await client.get_all(table_id=Config.ATS_BOOK_ID, app='USER')
+
+            # Собираем уникальные значения Department
+            for record in records:
+                department = record.get("Department")
+                if department:  # Проверяем что не None и не пустая строка
+                    departments.add(department)
+
+        # Возвращаем отсортированный список
+        return sorted(list(departments))
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка отделов: {e}")
+        return []
 
 
 async def give_employee_data(search_type: str, search_query: str, employees: List[Dict],

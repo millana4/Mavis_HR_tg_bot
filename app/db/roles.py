@@ -4,9 +4,10 @@ from enum import Enum
 from typing import List, Optional, Dict
 from dateutil.relativedelta import relativedelta
 
-from app.seatable_api.api_sync_1c import update_auth
 from config import Config
-from app.seatable_api.api_base import fetch_table
+from app.db.table_data import fetch_table
+from app.db.nocodb_client import NocoDBClient
+from app.db.sync_1c import update_auth
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,70 @@ class UserRole(str, Enum):
 
 class RoleChecker:
     """Проверяет и обновляет роли пользователей"""
+
+    async def get_role(user_id: str) -> Optional[str]:
+        """Получает роль пользователя из NocoDB"""
+        try:
+            async with NocoDBClient() as client:
+                # Ищем пользователя по ID_messenger
+                where_filter = f"(ID_messenger,eq,{user_id})"
+                users = await client.get_all(
+                    table_id=Config.AUTH_TABLE_ID,
+                    where=where_filter,
+                    limit=1
+                )
+
+            if not users:
+                logger.warning(f"Пользователь {user_id} не найден в таблице")
+                return None
+
+            user = users[0]
+            role = user.get('Role')
+            logger.info(f"Найден пользователь: {user.get('FIO')}, его роль: {role}")
+            return role
+
+        except Exception as e:
+            logger.error(f"Ошибка получения роли для {user_id}: {str(e)}", exc_info=True)
+            return None
+
+    async def change_user_role(user_id: int, new_role: str) -> bool:
+        """Изменяет роль пользователя в таблице NocoDB"""
+        try:
+            async with NocoDBClient() as client:
+                # Получаем пользователя по ID_messenger
+                where_filter = f"(ID_messenger,eq,{user_id})"
+                users = await client.get_all(
+                    table_id=Config.AUTH_TABLE_ID,
+                    where=where_filter,
+                    limit=1
+                )
+
+                if not users:
+                    logger.error(f"User {user_id} not found")
+                    return False
+
+                user_row = users[0]
+                record_id = user_row.get('Id')
+
+                if not record_id:
+                    logger.error("User row has no ID")
+                    return False
+
+                update_data = {"Role": new_role}
+
+                await client.update_record(
+                    table_id=Config.AUTH_TABLE_ID,
+                    record_id=record_id,
+                    data=update_data
+                )
+
+                logger.info(f"Role changed to {new_role} for user {user_id}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error changing role for {user_id}: {str(e)}", exc_info=True)
+            return False
+
 
     async def check_and_update_roles(self) -> None:
         """

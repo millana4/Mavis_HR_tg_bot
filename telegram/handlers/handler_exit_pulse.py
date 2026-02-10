@@ -7,7 +7,7 @@ from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, C
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from app.seatable_api.api_base import fetch_table
+from app.db.table_data import fetch_table
 from config import Config
 from app.services.broadcast import is_user_admin
 from telegram.handlers.handler_base import start_navigation

@@ -4,12 +4,12 @@ from aiogram import Router, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import ReplyKeyboardRemove
 
+from app.db.roles import RoleChecker
 from app.services.cache import clear_user_auth, get_user_access_and_role
 from app.services.utils import normalize_phone, contains_restricted_emails
 from app.services.fsm import state_manager, AppStates
-from app.seatable_api.api_auth import register_id_messenger, check_id_messenger
-from app.seatable_api.api_users import get_role_from_st
-from app.seatable_api.api_base import fetch_table
+from app.db.auth import register_id_messenger, check_id_messenger
+from app.db.table_data import fetch_table
 from config import Config
 from telegram.bot_menu import update_user_commands
 
@@ -123,7 +123,7 @@ async def start_navigation(message: types.Message, current_role: str = None):
 
         # Если роль не передана - определяем роль пользователя по таблице Seatable
         if current_role is None:
-            user_role = await get_role_from_st(user_id)
+            user_role = await RoleChecker.get_role(user_id)
         else:
             user_role = current_role
 

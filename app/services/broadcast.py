@@ -4,7 +4,7 @@ import logging
 import aiohttp
 from typing import List, Dict, Tuple
 from config import Config
-from app.seatable_api.api_base import fetch_table
+from app.db.table_data import fetch_table
 from telegram.content import prepare_telegram_message
 
 

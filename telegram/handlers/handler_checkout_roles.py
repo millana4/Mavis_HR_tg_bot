@@ -2,8 +2,8 @@ from aiogram import F, Router
 from aiogram.types import Message
 import logging
 
-from app.seatable_api.api_users import change_user_role
-from app.services.fsm import state_manager, AppStates
+from app.db.roles import RoleChecker
+from app.services.fsm import state_manager
 from app.services.cache import clear_user_auth
 from config import Config
 
@@ -25,7 +25,7 @@ async def handle_checkout_newcomer(message: Message):
         return
 
     # Меняем роль в Seatable
-    success = await change_user_role(user_id, "newcomer")
+    success = await RoleChecker.change_user_role(user_id, "newcomer")
 
     if success:
         # Очищаем кеш авторизации пользователя
@@ -68,7 +68,7 @@ async def handle_checkout_employee(message: Message):
         return
 
     # Меняем роль в Seatable
-    success = await change_user_role(user_id, "employee")
+    success = await RoleChecker.change_user_role(user_id, "employee")
 
     if success:
         # Очищаем кеш авторизации пользователя

@@ -3,18 +3,17 @@ import logging
 import pprint
 import re
 from collections import defaultdict
-from datetime import datetime, time, timedelta, date
+from datetime import datetime, time, timedelta
 from typing import List, Dict, Iterable, Callable, Awaitable
 
 from dateutil.relativedelta import relativedelta
 
-from app.db.organization import Company, CompanySegmentDetector, Department, CompanySegment
-from app.db.roles import check_user_roles_daily
-from app.db.roles import UserRole
+from app.db.nocodb_client import NocoDBClient
+from app.db.organization import Company, Department, CompanySegment
+from app.db.roles import check_user_roles_daily, UserRole
 from app.db.users import User, Employment
-from app.seatable_api.api_base import fetch_table
-from app.services.pulse_tasks import PulseTaskCreator
-from app.seatable_api.api_sync_1c import update_pivot, create_pivot, archive_pivot, delete_auth, get_auth, create_auth, update_auth
+from app.db.table_data import fetch_table
+from app.services.pulse_creator import PulseTaskCreator
 from app.services.utils import normalize_phones_string, values_to_set, phones_to_set, surname_to_str
 from config import Config
 
@@ -200,6 +199,191 @@ def pivot_data_changed(existing: Dict, new: Dict) -> bool:
         return True
 
     return False
+
+
+
+# __________________________________________________________
+#            МЕТОДЫ ДЛЯ БАЗЫ ДАННЫХ
+
+# Методы для сводной таблицы
+
+async def create_pivot(user_data: Dict) -> bool:
+    """
+    Создает пользователя в сводной таблице NocoDB
+    """
+    try:
+        async with NocoDBClient() as client:
+            result = await client.create_record(table_id=Config.PIVOT_TABLE_ID, data=user_data)
+
+            if result:
+                logger.info(f"Пользователь создан в сводной таблице: {user_data.get('FIO')}")
+                return True
+            else:
+                logger.error(f"Ошибка создания пользователя в сводной таблице: {user_data.get('FIO')}")
+                return False
+
+    except Exception as e:
+        logger.error(f"Ошибка при создании пользователя в сводной таблице: {str(e)}")
+        return False
+
+
+async def update_pivot(record_id: str, user_data: Dict) -> bool:
+    """
+    Обновляет пользователя в сводной таблице NocoDB
+    """
+    try:
+        async with NocoDBClient() as client:
+            await client.update_record(
+                table_id=Config.PIVOT_TABLE_ID,
+                record_id=record_id,
+                data=user_data
+            )
+
+            logger.info(f"Пользователь обновлен в сводной таблице: {user_data.get('FIO')}")
+            return True
+
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении пользователя в сводной таблице: {str(e)}")
+        return False
+
+
+async def archive_pivot(record_id: str, user_data: Dict) -> bool:
+    """
+    Архивирует пользователя в сводной таблице NocoDB (оставляет только СНИЛС и дату устройства).
+    Дата устройства должна оставаться на случай, если сотрудник переоформится в другую компанию,
+    чтобы ему потом не создавались пульс-опросы как новому сотруднику от новой даты.
+    """
+    try:
+        # Сохраняем только СНИЛС и дату устройства
+        archived_data = {
+            'Name': user_data.get('Name'),  # СНИЛС
+            'Date_employment': user_data.get('Date_employment'),  # Дата устройства
+            'FIO': None,
+            'Previous_surname': None,
+            'Company_segment': None,
+            'Companies': None,
+            'Departments': None,
+            'Positions': None,
+            'Internal_numbers': None,
+            'Email_mavis': None,
+            'Email_other': None,
+            'Email_votonia': None,
+            'Phones': None,
+            'Location': None,
+            'Photo': None,
+            'Is_archived': True  # Флаг архивации
+        }
+
+        async with NocoDBClient() as client:
+            await client.update_record(
+                table_id=Config.PIVOT_TABLE_ID,
+                record_id=record_id,
+                data=archived_data
+            )
+
+            logger.info(f"Пользователь архивирован в сводной таблице (СНИЛС: {user_data.get('Name')})")
+            return True
+
+    except Exception as e:
+        logger.error(f"Ошибка при архивации пользователя: {str(e)}")
+        return False
+
+
+# Методы для авторизационной таблицы
+
+async def get_auth() -> Dict[str, List[Dict]]:
+    """
+    Получает всех пользователей из таблицы авторизации NocoDB
+    Возвращает словарь {snils: [записи_по_телефонам]}
+    """
+    try:
+        async with NocoDBClient() as client:
+            auth_users = await client.get_all(table_id=Config.AUTH_TABLE_ID)
+
+        if not auth_users:
+            return {}
+
+        # Группируем по СНИЛС, так как у одного пользователя может быть несколько записей
+        grouped_by_snils = {}
+        for user in auth_users:
+            snils = user.get('Name')
+            if snils:
+                if snils not in grouped_by_snils:
+                    grouped_by_snils[snils] = []
+                grouped_by_snils[snils].append(user)
+
+        return grouped_by_snils
+
+    except Exception as e:
+        logger.error(f"Ошибка получения пользователей из таблицы авторизации: {e}")
+        return {}
+
+
+async def create_auth(auth_record: Dict) -> bool:
+    """
+    Создает запись пользователя в таблице авторизации NocoDB
+    """
+    try:
+        async with NocoDBClient() as client:
+            result = await client.create_record(
+                table_id=Config.AUTH_TABLE_ID,
+                data=auth_record
+            )
+
+            if result:
+                logger.info(f"Создана запись в авторизационной таблице: {auth_record.get('FIO')}")
+                return True
+            else:
+                logger.error(f"Ошибка создания записи в авторизационной таблице: {auth_record.get('FIO')}")
+                return False
+
+    except Exception as e:
+        logger.error(f"Ошибка создания записи в авторизационной таблице: {e}")
+        return False
+
+
+async def update_auth(record_id: str, auth_record: Dict) -> bool:
+    """
+    Обновляет запись пользователя в таблице авторизации NocoDB
+    """
+    try:
+        async with NocoDBClient() as client:
+            await client.update_record(
+                table_id=Config.AUTH_TABLE_ID,
+                record_id=record_id,
+                data=auth_record
+            )
+
+            logger.info(f"Обновлена запись в авторизационной таблице: {record_id}")
+            return True
+
+    except Exception as e:
+        logger.error(f"Ошибка обновления записи в авторизационной таблице: {e}")
+        return False
+
+
+async def delete_auth(record_id: str) -> bool:
+    """
+    Удаляет запись пользователя из таблицы авторизации NocoDB
+    """
+    try:
+        async with NocoDBClient() as client:
+            deleted = await client.delete_record(
+                table_id=Config.AUTH_TABLE_ID,
+                record_id=record_id
+            )
+
+            if deleted:
+                logger.info(f"Удалена запись из авторизационной таблицы: {record_id}")
+                return True
+            else:
+                logger.error(f"Ошибка удаления записи из авторизационной таблицы: {record_id}")
+                return False
+
+    except Exception as e:
+        logger.error(f"Ошибка удаления записи из авторизационной таблицы: {e}")
+        return False
+
 
 # __________________________________________________________
 #            СИНХРОНИЗАЦИЯ С ВЫГРУЗКОЙ 1С

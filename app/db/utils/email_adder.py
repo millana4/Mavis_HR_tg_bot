@@ -13,7 +13,7 @@ import aiohttp
 
 try:
     from config import Config
-    from app.seatable_api.api_base import get_base_token, fetch_table
+    from app.db.table_data import fetch_table
 except ImportError:
     print("Ошибка импорта модулей. Запустите скрипт из корневой папки проекта.")
     sys.exit(1)

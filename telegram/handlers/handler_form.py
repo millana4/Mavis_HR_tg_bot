@@ -1,11 +1,14 @@
 import asyncio
 import logging
 from typing import List, Dict, Optional, Tuple
+from datetime import datetime
 
 from aiogram import Router, types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from app.db.roles import UserRole
+from app.db.table_data import fetch_table
+
 from config import Config
 
 from app.services.forms import start_form_questions, complete_form
@@ -30,7 +33,7 @@ async def process_form(table_data: List[Dict], message: Message) -> Tuple[Dict, 
     if not has_access:
         return
 
-    info_row = next((row for row in table_data if row.get('Name') == 'Info'), None)
+    info_row = next((row for row in table_data if row.get('Section') == 'Info'), None)
 
     if not info_row:
         logger.error("Форма не содержит строки с Name='Info'")
@@ -44,8 +47,10 @@ async def process_form(table_data: List[Dict], message: Message) -> Tuple[Dict, 
         current_state=AppStates.FORM_DATA  # устанавливаем состояние формы
     )
 
-    # Подготавливаем контент
-    form_content = prepare_telegram_message(info_row.get('Content', ''))
+    # Подготавливаем контент из Content_text и Content_image
+    content_text = info_row.get('Content_text', '')
+    content_image = info_row.get('Content_image')
+    form_content = prepare_telegram_message(content_text, content_image)
 
     # Сначала отправляем контент Info и ждём завершения
     if form_content.get('image_url'):
@@ -70,7 +75,7 @@ async def process_form(table_data: List[Dict], message: Message) -> Tuple[Dict, 
 async def get_form_question(form_state: Dict) -> Tuple[str, Optional[InlineKeyboardMarkup]]:
     """Возвращает текущий вопрос формы и клавиатуру (если нужно)"""
     question_data = form_state['questions'][form_state['current_question']]
-    question_text = question_data['Name']
+    question_text = question_data['Section']
 
     # Определяем, есть ли варианты ответа (ищем все ключи, начинающиеся на Answer_option_)
     answer_options = {
@@ -187,7 +192,7 @@ async def handle_form_option(callback: types.CallbackQuery):
     answer = callback.data.split(':', 1)[1]
 
     # Отправляем выбранный ответ в чат
-    question_text = form_data['questions'][form_data['current_question']]['Name']
+    question_text = form_data['questions'][form_data['current_question']]['Section']
     await callback.message.answer(f"Ваш ответ: «{answer}»")
 
     # Сохраняем ответ
@@ -260,9 +265,9 @@ async def finish_form(message: Message, form_data: Dict):
     user_state = await state_manager.get_data(user_id=user_id)
     user_role = user_state.get('role')
     if user_role == UserRole.NEWCOMER.value:
-        main_menu_id = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+        main_menu_id = Config.MAIN_MENU_NEWCOMER_ID
     else:
-        main_menu_id = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
+        main_menu_id = Config.MAIN_MENU_EMPLOYEE_ID
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -291,22 +296,24 @@ async def notify_feedback_admins(bot, user_id: int, form_data: Dict):
         from config import Config
         from datetime import datetime
 
-        admins = await fetch_table(
-            table_id=Config.SEATABLE_ADMIN_TABLE_ID,
-            app='USER'
-        )
-
-        if not admins:
-            logger.warning("Нет данных администраторов для уведомления")
-            return
-
+        # Получаем всех пользователей из авторизационной таблицы
         users = await fetch_table(
-            table_id=Config.SEATABLE_USERS_TABLE_ID,
+            table_id=Config.AUTH_TABLE_ID,
             app='USER'
         )
 
         if not users:
             logger.warning("Нет данных пользователей для уведомления")
+            return
+
+        # Получаем админов из таблицы администраторов
+        admins = await fetch_table(
+            table_id=Config.ADMIN_TABLE_ID,
+            app='USER'
+        )
+
+        if not admins:
+            logger.warning("Нет данных администраторов для уведомления")
             return
 
         # Получаем данные отправителя
@@ -318,31 +325,17 @@ async def notify_feedback_admins(bot, user_id: int, form_data: Dict):
 
         sender_name = sender_data.get('FIO', 'Неизвестный') if sender_data else 'Неизвестный'
 
-        # Создаем маппинг: user_row_id -> telegram_id
-        user_id_to_telegram = {}
-        for user in users:
-            user_row_id = user.get('_id')
-            telegram_id = user.get('ID_messenger')
-            if user_row_id and telegram_id:
-                user_id_to_telegram[user_row_id] = telegram_id
-
+        # Создаем маппинг: ID_messenger из админской таблицы
         feedback_admins = []
 
-        # Ищем админов с правами Feedback_admin
         for admin in admins:
             if admin.get('Feedback_admin') is True:
-                messenger_ids = admin.get('ID_messenger', [])
-                if isinstance(messenger_ids, list):
-                    for user_row_id in messenger_ids:
-                        telegram_id = user_id_to_telegram.get(user_row_id)
-                        if telegram_id:
-                            feedback_admins.append({
-                                'row_id': user_row_id,
-                                'telegram_id': telegram_id,
-                                'fio': admin.get('FIO', 'Администратор')
-                            })
-                        else:
-                            logger.warning(f"Не найден Telegram ID для админа с row_id: {user_row_id}")
+                telegram_id = admin.get('ID_messenger')
+                if telegram_id:
+                    feedback_admins.append({
+                        'telegram_id': telegram_id,
+                        'fio': admin.get('FIO', 'Администратор')
+                    })
 
         if not feedback_admins:
             logger.info("Нет администраторов с правами Feedback_admin для уведомления")
@@ -352,7 +345,7 @@ async def notify_feedback_admins(bot, user_id: int, form_data: Dict):
         feedback_content = []
         if form_data.get('questions') and form_data.get('answers'):
             for i, (question, answer) in enumerate(zip(form_data['questions'], form_data['answers']), 1):
-                question_text = question.get('Name', f'Вопрос {i}')
+                question_text = question.get('Section', f'Вопрос {i}')
                 feedback_content.append(f"{question_text} — {answer}")
 
         feedback_text = "\n".join(feedback_content) if feedback_content else "Содержание не доступно"
@@ -379,11 +372,10 @@ async def notify_feedback_admins(bot, user_id: int, form_data: Dict):
                     logger.info(f"Уведомление отправлено админу {admin.get('fio')} (ID: {telegram_id})")
                 except Exception as e:
                     logger.error(f"Ошибка отправки уведомления админу {telegram_id}: {e}")
-            else:
-                logger.warning(f"У админа {admin.get('row_id')} нет Telegram ID")
 
     except Exception as e:
         logger.error(f"Ошибка при уведомлении администраторов: {e}")
+
 
 @router.callback_query(F.data == "form_cancel")
 async def handle_form_cancel(callback: types.CallbackQuery):
@@ -405,19 +397,15 @@ async def handle_form_cancel(callback: types.CallbackQuery):
     user_state = await state_manager.get_data(user_id=user_id)
     user_role = user_state.get('role')
     if user_role == UserRole.NEWCOMER.value:
-        main_menu_id = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+        main_menu_id = Config.MAIN_MENU_NEWCOMER_ID
     else:
-        main_menu_id = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
+        main_menu_id = Config.MAIN_MENU_EMPLOYEE_ID
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(
-                text="⬅️ В главное меню",
-                callback_data=f"menu:{main_menu_id}"
-            )]
-        ]
-    )
-
+    # Удаляем клавиатуру у предыдущего сообщения
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except:
+        pass
 
     # Создаем клавиатуру для возврата в главное меню
     keyboard = InlineKeyboardMarkup(
@@ -428,12 +416,6 @@ async def handle_form_cancel(callback: types.CallbackQuery):
             )]
         ]
     )
-
-    # Удаляем клавиатуру у предыдущего сообщения
-    try:
-        await callback.message.edit_reply_markup(reply_markup=None)
-    except:
-        pass
 
     # Отправляем сообщение об отмене
     await callback.message.answer(

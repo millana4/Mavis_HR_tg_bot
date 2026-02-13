@@ -11,19 +11,24 @@ logger = logging.getLogger(__name__)
 def is_form(table_data: List[Dict]) -> bool:
     """Проверяет, является ли таблица формой"""
     has_form_fields = False
-    for row in table_data:
-        # Если есть признаки меню - точно не форма
-        if any(field in row for field in ['Submenu_link', 'Button_content', 'External_link']):
-            return has_form_fields
 
-        # Проверяем признаки формы
-        if ('Free_input' in row) or any(key.startswith('Answer_option_') for key in row.keys()):
+    # Сначала проверяем Info на наличие Answers_table
+    info_row = next((row for row in table_data if row.get('Section') == 'Info'), {})
+    if info_row.get('Answers_table'):
+        return True
+
+    # Проверяем остальные строки
+    for row in table_data:
+        if row.get('Section') in ['Info', 'Final_message']:
+            continue
+
+        # Если есть признаки формы
+        if row.get('Free_input') is not None or any(key.startswith('Answer_option_') for key in row.keys()):
             has_form_fields = True
 
-    # Answers_table проверяем только в строке Info
-    info_row = next((row for row in table_data if row.get('Name') == 'Info'), {})
-    if info_row.get('Answers_table'):
-        has_form_fields = True
+        # Если есть признаки меню - это меню, а не форма
+        if row.get('Submenu_id') or row.get('External_link'):
+            return False
 
     return has_form_fields
 
@@ -31,14 +36,14 @@ def is_form(table_data: List[Dict]) -> bool:
 async def start_form_questions(table_data: List[Dict]) -> Dict:
     """Получает вопросы из формы"""
     questions = [row for row in table_data
-                if row.get('Name') not in ['Info', 'Final_message']]
+                if row.get('Section') not in ['Info', 'Final_message']]
 
     # Безопасное получение answers_table (может быть None)
-    info_row = next((row for row in table_data if row.get('Name') == 'Info'), {})
+    info_row = next((row for row in table_data if row.get('Section') == 'Info'), {})
     answers_table = info_row.get('Answers_table')
 
     # Безопасное получение final_message (может быть None)
-    final_row = next((row for row in table_data if row.get('Name') == 'Final_message'), {})
+    final_row = next((row for row in table_data if row.get('Section') == 'Final_message'), {})
     final_message = final_row.get('Content')
 
     return {
@@ -50,9 +55,9 @@ async def start_form_questions(table_data: List[Dict]) -> Dict:
     }
 
 
-async def prepare_data_to_post_in_seatable(form_data: Dict) -> Optional[Dict]:
+async def prepare_data_to_post_in_db(form_data: Dict) -> Optional[Dict]:
     """
-    Подготавливает данные из форм обратной связи для сохранения в Seatable.
+    Подготавливает данные из форм обратной связи для сохранения в базу данных.
     Возвращает словарь с данными или None в случае ошибки.
     """
     # Проверяем обязательные поля
@@ -65,16 +70,9 @@ async def prepare_data_to_post_in_seatable(form_data: Dict) -> Optional[Dict]:
         logger.error(f"Количество вопросов ({len(form_data['questions'])}) != ответов ({len(form_data['answers'])})")
         return None
 
-    # Извлекаем table_id из URL
-    try:
-        from urllib.parse import urlparse, parse_qs
-        parsed_url = urlparse(form_data['answers_table'])
-        query_params = parse_qs(parsed_url.query)
-        table_id = query_params.get('tid')[0]
-        logger.info(f"Table ID: {table_id}")
-    except Exception as e:
-        logger.error(f"Ошибка парсинга URL таблицы: {e}")
-        return None
+    # Используем answers_table как есть (это уже ID таблицы)
+    table_id = form_data['answers_table']
+    logger.info(f"Table ID: {table_id}")
 
     # Подготавливаем данные
     try:
@@ -87,7 +85,7 @@ async def prepare_data_to_post_in_seatable(form_data: Dict) -> Optional[Dict]:
 
     # Формируем строку для записи
     row_data = {
-        'Name': str(form_data['user_id']),
+        'Section': str(form_data['user_id']),
         'Дата и время': formatted_date
     }
 
@@ -99,7 +97,7 @@ async def prepare_data_to_post_in_seatable(form_data: Dict) -> Optional[Dict]:
 
     # Добавляем вопросы и ответы
     for question_data, answer in zip(form_data['questions'], form_data['answers']):
-        question_text = question_data.get('Name', '')
+        question_text = question_data.get('Section', '')
         if question_text:
             row_data[question_text] = str(answer) if answer is not None else ''
 
@@ -139,7 +137,7 @@ async def save_form_answers(form_data: Dict) -> bool:
                     break
 
         # Подготавливаем данные для записи
-        prepared_data = await prepare_data_to_post_in_seatable(form_data)
+        prepared_data = await prepare_data_to_post_in_db(form_data)
         if not prepared_data:
             logger.error("Не удалось подготовить данные для сохранения")
             return False
@@ -148,6 +146,7 @@ async def save_form_answers(form_data: Dict) -> bool:
         answers_table_id = prepared_data['table_id']
 
         logger.info(f"Данные для записи: {row_data}")
+        logger.info(f"ID таблицы для записи: {answers_table_id}")  # Добавить эту строку
 
         # Записываем ответы (NocoDB проигнорирует несуществующие колонки)
         async with NocoDBClient() as client:

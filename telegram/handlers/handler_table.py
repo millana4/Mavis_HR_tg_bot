@@ -59,42 +59,48 @@ async def handle_table_menu(table_id: str, user_id: str, message: Message = None
 
         return content_part, keyboard
 
+
 async def create_menu_keyboard(table_data: List[Dict], current_table_id: str, user_id: str) -> InlineKeyboardMarkup:
-    """Создает инлайн-клавиатуру с кнопками"""
+    """Создает инлайн-клавиатуру с кнопками для NocoDB"""
     inline_keyboard = []
 
     for row in table_data:
-        name = row.get('Name')
-        if not name or name == 'Info':
+        section = row.get('Section')
+
+        # Пропускаем Info-секцию (это контент меню, не кнопка)
+        if not section or section == 'Info':
             continue
 
-        if row.get('Submenu_link') and Config.SEATABLE_PIVOT_TABLE_ID in row.get('Submenu_link'):
-            # В Submenu_link может быть ссылка на справочник сотрудников
-            submenu_id = re.search(r'tid=([^&]+)', row['Submenu_link']).group(1)
-            inline_keyboard.append([InlineKeyboardButton(
-                text=name,
-                callback_data=f"contacts:{submenu_id}"
-            )])
-        elif row.get('Submenu_link'):
-            # Или в Submenu_link может быть ссылка на другое меню
-            submenu_id = re.search(r'tid=([^&]+)', row['Submenu_link']).group(1)
-            inline_keyboard.append([InlineKeyboardButton(
-                text=name,
-                callback_data=f"menu:{submenu_id}"
-            )])
+        # ПРИОРИТЕТ 1: Подменю (Submenu_id)
+        if row.get('Submenu_id'):
+            # Проверяем, это справочник сотрудников (PIVOT_TABLE_ID) или обычное меню
+            if row.get('Submenu_id') == Config.PIVOT_TABLE_ID:
+                inline_keyboard.append([InlineKeyboardButton(
+                    text=section,  # Используем Section как текст кнопки
+                    callback_data=f"contacts:{row['Submenu_id']}"
+                )])
+            else:
+                inline_keyboard.append([InlineKeyboardButton(
+                    text=section,  # Используем Section как текст кнопки
+                    callback_data=f"menu:{row['Submenu_id']}"
+                )])
+
+        # ПРИОРИТЕТ 2: Внешняя ссылка (External_link)
         elif row.get('External_link'):
             inline_keyboard.append([InlineKeyboardButton(
-                text=name,
+                text=section,  # Используем Section как текст кнопки
                 url=row['External_link']
             )])
-        elif row.get('Button_content'):
+
+        # ПРИОРИТЕТ 3: Контентная кнопка (Content_text или Content_image)
+        elif row.get('Content_text') or row.get('Content_image'):
             inline_keyboard.append([InlineKeyboardButton(
-                text=name,
-                callback_data=f"content:{current_table_id}:{row['_id']}"
+                text=section,  # Используем Section как текст кнопки
+                callback_data=f"content:{current_table_id}:{row['Id']}"
             )])
 
     # Добавляем кнопку "Назад" только если это не главное меню
-    if current_table_id != Config.SEATABLE_MAIN_MENU_NEWCOMER_ID and current_table_id != Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID:
+    if current_table_id not in [Config.MAIN_MENU_NEWCOMER_ID, Config.MAIN_MENU_EMPLOYEE_ID]:
         inline_keyboard.append([InlineKeyboardButton(
             text="⬅️ Назад",
             callback_data="back"
@@ -117,10 +123,12 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
 
         # Получаем и обновляем состояние
         new_table_id = callback_query.data.split(':')[1]
+        print(new_table_id)
         await state_manager.navigate_to_menu(user_id, new_table_id)
 
         # Получаем данные меню
         state = await state_manager.get_current_menu(user_id)
+        print(state)
         content, keyboard = await handle_table_menu(
             new_table_id,
             str(user_id),

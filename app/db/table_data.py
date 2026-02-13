@@ -21,12 +21,14 @@ async def fetch_table(table_id: str = "empty", app: str = "HR", limit: int = Non
     """
     try:
         # Запрашиваем токен для нужного приложения — Мавис-HR или база пользователей
-        if str == "empty" and app == 'USER':
+        if table_id == "empty" and app == 'USER':
             table_id = Config.PIVOT_TABLE_ID
-        elif str == "empty" and app == 'PULSE':
+        elif table_id == "empty" and app == 'PULSE':
             table_id = Config.PULSE_CONTENT_ID
-        else:
+        elif table_id == "empty" and app == 'HR':
             table_id = Config.MAIN_MENU_EMPLOYEE_ID
+
+        print(f"call table {table_id}")
 
         async with NocoDBClient() as client:
             return await client.get_all(

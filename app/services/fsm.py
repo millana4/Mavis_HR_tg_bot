@@ -39,8 +39,8 @@ class StateManager:
         self._init_db()
         self.load_from_db()
 
-        self.SEATABLE_MAIN_MENU_EMPLOYEE_ID = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
-        self.SEATABLE_MAIN_MENU_NEWCOMER_ID = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+        self.MAIN_MENU_EMPLOYEE_ID = Config.MAIN_MENU_EMPLOYEE_ID
+        self.MAIN_MENU_NEWCOMER_ID = Config.MAIN_MENU_NEWCOMER_ID
 
     # =========================
     # DB

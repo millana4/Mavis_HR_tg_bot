@@ -38,9 +38,11 @@ class NocoDBClient:
 
     async def get_all(self, table_id: str, fields: Optional[List[str]] = None, where: Optional[str] = None,
                       sort: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[Dict]:
+        print(table_id)
         """Получить все записи таблицы"""
         logger.info(f"Getting all records from table {table_id}")
         url = f"{self.base_url}/api/v2/tables/{table_id}/records"
+        print(url)
         params = {"limit": limit, "offset": offset}
         if fields:
             params["fields"] = ",".join(fields)

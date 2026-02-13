@@ -7,7 +7,7 @@ from dateutil.relativedelta import relativedelta
 from config import Config
 from app.db.table_data import fetch_table
 from app.db.nocodb_client import NocoDBClient
-from app.db.sync_1c import update_auth
+from app.db.sync_db_executor import update_auth
 
 logger = logging.getLogger(__name__)
 

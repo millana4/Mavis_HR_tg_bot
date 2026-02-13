@@ -34,7 +34,7 @@ async def set_main_menu(bot: Bot):
     # Для админов установим отдельные команды
     try:
         # Получаем список всех пользователей для установки команд админам
-        users = await fetch_table(table_id=Config.SEATABLE_USERS_TABLE_ID, app='USER')
+        users = await fetch_table(table_id=Config.AUTH_TABLE_ID, app='USER')
 
         for user in users:
             user_id = user.get('ID_messenger')

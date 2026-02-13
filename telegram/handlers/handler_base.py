@@ -135,9 +135,9 @@ async def start_navigation(message: types.Message, current_role: str = None):
 
         # Получаем ID главного меню для роли пользователя
         if user_role == "newcomer":
-            main_menu_id = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+            main_menu_id = Config.MAIN_MENU_NEWCOMER_ID
         else:
-            main_menu_id = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
+            main_menu_id = Config.MAIN_MENU_EMPLOYEE_ID
         logger.info(f"Main menu ID for user {user_id}: {main_menu_id}")
 
         # Инициализация состояния для переходов по меню

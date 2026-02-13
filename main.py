@@ -4,7 +4,6 @@ from aiogram import Bot, Dispatcher
 
 from app.services.fsm import state_manager
 from config import Config
-from app.db.sync_1c import start_sync_scheduler
 from app.services.pulse_sender import start_pulse_sender_scheduler
 
 

@@ -7,6 +7,28 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
+# async def check_id_messenger(id_messenger: str) -> tuple[bool, str]:
+#     """
+#     Функция для проверки доступа и получения роли пользователя.
+#     Возвращает (has_access, role)
+#     """
+#     try:
+#         async with NocoDBClient() as client:
+#             users = await client.get_all(table_id=Config.AUTH_TABLE_ID)
+#
+#             for user in users:
+#                 if str(user.get("ID_messenger")) == str(id_messenger):
+#                     role = user.get('Role', 'employee')
+#                     logger.info(f"Найден пользователь с ID_messenger: {id_messenger}, роль: {role}")
+#                     return True, role
+#
+#             logger.info(f"Пользователь с ID_messenger {id_messenger} не найден")
+#             return False, "employee"
+#
+#     except Exception as e:
+#         logger.error(f"Ошибка при проверке пользователя: {str(e)}", exc_info=True)
+#         return False, "employee"
+
 async def check_id_messenger(id_messenger: str) -> tuple[bool, str]:
     """
     Функция для проверки доступа и получения роли пользователя.
@@ -14,13 +36,19 @@ async def check_id_messenger(id_messenger: str) -> tuple[bool, str]:
     """
     try:
         async with NocoDBClient() as client:
-            users = await client.get_all(table_id=Config.AUTH_TABLE_ID)
+            # Фильтруем по ID_messenger, получаем только одну запись
+            where_filter = f"(ID_messenger,eq,{id_messenger})"
+            users = await client.get_all(
+                table_id=Config.AUTH_TABLE_ID,
+                where=where_filter,
+                limit=1  # Нужен только один пользователь
+            )
 
-            for user in users:
-                if str(user.get("ID_messenger")) == str(id_messenger):
-                    role = user.get('Role', 'employee')
-                    logger.info(f"Найден пользователь с ID_messenger: {id_messenger}, роль: {role}")
-                    return True, role
+            if users:
+                user = users[0]
+                role = user.get('Role', 'employee')
+                logger.info(f"Найден пользователь с ID_messenger: {id_messenger}, роль: {role}")
+                return True, role
 
             logger.info(f"Пользователь с ID_messenger {id_messenger} не найден")
             return False, "employee"

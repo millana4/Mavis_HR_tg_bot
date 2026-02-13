@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Tuple
 from aiogram import Router, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
+from app.db.nocodb_client import NocoDBClient
 from app.services.utils import contains_restricted_emails
 from config import Config
 from app.services.fsm import state_manager
@@ -186,8 +187,12 @@ async def process_content_callback(callback_query: types.CallbackQuery):
         await state_manager.navigate_to_menu(user_id, content_key)
 
         # Получаем данные контента
-        table_data = await fetch_table(table_id=table_id, app="HR")
-        row = next((r for r in table_data if r['_id'] == row_id), None)
+        async with NocoDBClient() as nocodb:
+            rows = await nocodb.get_all(
+                table_id=table_id,
+                where=f"(Id,eq,{row_id})"
+            )
+            row = rows[0] if rows else None
 
         if not row:
             await callback_query.answer("Контент не найден", show_alert=True)
@@ -212,7 +217,7 @@ async def process_content_callback(callback_query: types.CallbackQuery):
         if content.get('image_url'):
             await callback_query.message.answer_photo(
                 photo=content['image_url'],
-                caption=content.get('text', "Информация"),  # Гарантированный текст
+                caption=content.get('text', "Информация"),
                 reply_markup=keyboard,
                 parse_mode="HTML"
             )
@@ -230,29 +235,38 @@ async def process_content_callback(callback_query: types.CallbackQuery):
         await callback_query.answer("Ошибка загрузки контента", show_alert=True)
 
 
-async def handle_content_button(table_id: str, row_id: str, should_post_back: bool = True) -> Tuple[Dict, Optional[InlineKeyboardMarkup]]:
+async def handle_content_button(table_id: str, row_id: str, should_post_back: bool = True) -> Tuple[
+    Dict, Optional[InlineKeyboardMarkup]]:
     """
     Обрабатывает нажатие на кнопку контента
     :return: Кортеж (контент, клавиатура "Назад")
     """
     logger.info(f"Обработка контента для table_id={table_id}, row_id={row_id}")
 
-    table_data = await fetch_table(table_id, app="HR")
-    if not table_data:
+    async with NocoDBClient() as nocodb:
+        rows = await nocodb.get_all(
+            table_id=table_id,
+            where=f"(Id,eq,{row_id})"
+        )
+
+    if not rows:
         logger.error(f"Ошибка загрузки данных таблицы {table_id}")
         return {"text": "Ошибка загрузки контента"}, None
 
-    row = next((r for r in table_data if r['_id'] == row_id), None)
+    row = rows[0]
     if not row:
         logger.error(f"Строка с row_id={row_id} не найдена в таблице {table_id}")
         return {"text": "Контент не найден"}, None
 
-    logger.info(f"Найдена строка контента: {row.get('Name', 'Без названия')}")
+    logger.info(f"Найдена строка контента: {row.get('Id', 'Без ID')}")
 
     # Подготавливаем контент
     content = {}
-    if row.get('Button_content'):
-        content.update(prepare_telegram_message(row['Button_content']))
+    if row.get('Content_text') or row.get('Content_image'):
+        content.update(prepare_telegram_message(
+            text_content=row.get('Content_text', ''),
+            image_url=row.get('Content_image')
+        ))
         logger.info("Контент подготовлен")
 
         # Проверяем наличие email с доменами .ru
@@ -267,7 +281,7 @@ async def handle_content_button(table_id: str, row_id: str, should_post_back: bo
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
             text="⬅️ Назад",
-            callback_data="back"  # Убрали параметры
+            callback_data="back"
         )
     ]])
     logger.info("Создана клавиатура 'Назад'")

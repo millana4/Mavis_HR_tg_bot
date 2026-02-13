@@ -179,13 +179,13 @@ def format_unit_text(unit: Dict) -> str:
     parts = []
 
     if unit.get("Title"):
-        parts.append(f"<b>{unit["Title"]}</b>")
+        parts.append(f"<b>{unit['Title']}</b>")
 
     if unit.get("Email"):
-        parts.append(f"Email: {unit["Email"]}")
+        parts.append(f"Email: {unit['Email']}")
 
     if unit.get("Internal_number"):
-        parts.append(f"Внутренний телефон: {unit["Internal_number"]}")
+        parts.append(f"Внутренний телефон: {unit['Internal_number']}")
 
 
     if not parts:

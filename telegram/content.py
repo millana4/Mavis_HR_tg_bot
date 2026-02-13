@@ -91,65 +91,62 @@ async def process_content_part(table_data: List[Dict]) -> Dict:
     return {"text": "👉"}
 
 
+import re
+import html
+from typing import Dict
+
+
 def prepare_telegram_message(text_content: str, image_url: str = None) -> Dict[str, str]:
-    """
-    Подготавливает контент для отправки в Telegram с HTML разметкой.
-    Обрабатывает три случая: только текст, только картинка, текст+картинка.
-    """
     result = {
         'text': text_content,
         'image_url': image_url,
         'parse_mode': 'HTML'
     }
 
-    # Случай 1: Только картинка (текста нет)
+    # Только картинка
     if image_url and not text_content:
-        result['text'] = "‎"  # Невидимый символ для Telegram
+        result['text'] = "‎"
         return result
 
-    # Если есть текст - преобразуем Markdown в HTML
-    if text_content:
-        text = text_content
+    if not text_content:
+        return result
 
-        # Обрабатываем переносы строк
-        def replace_newlines(match):
-            n = len(match.group(0)) // 2
-            return '\n' * n
+    text = text_content
 
-        text = re.sub(r'\n{2,}', replace_newlines, text)
+    # 1️⃣ Сначала заменяем <br> на специальный маркер
+    text = re.sub(r'\s*<br\s*/?>\s*', '[[BR]]', text)
 
-        # Заголовки (#) -> <b>
-        text = re.sub(r'^#+\s*(.+?)\s*$', r'<b>\1</b>', text, flags=re.MULTILINE)
+    # 2️⃣ Все двойные переносы превращаем в одинарные
+    text = re.sub(r'\n{2,}', '\n', text)
 
-        # Жирный текст
-        text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # 3️⃣ Возвращаем абзацы там где были <br>
+    text = text.replace('[[BR]]', '\n\n')
 
-        # Курсив
-        text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+    # 4️⃣ Убираем пробелы в начале строк
+    text = re.sub(r'\n +', '\n', text)
 
-        # Ссылки
-        text = re.sub(r'\[([^\]]+)]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
+    # --- Markdown → HTML ---
+    text = re.sub(r'^#+\s*(.+?)\s*$', r'<b>\1</b>', text, flags=re.MULTILINE)
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+    text = re.sub(r'\[([^\]]+)]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
 
-        # Маркированные списки
-        text = re.sub(r'^\*\s+(.+)$', r'• \1', text, flags=re.MULTILINE)
+    # --- Экранируем HTML ---
+    text = html.escape(text)
 
-        # Экранируем HTML-сущности
-        text = html.escape(text)
+    replacements = {
+        '&lt;b&gt;': '<b>',
+        '&lt;/b&gt;': '</b>',
+        '&lt;i&gt;': '<i>',
+        '&lt;/i&gt;': '</i>',
+        '&lt;a href=&quot;': '<a href="',
+        '&quot;&gt;': '">',
+        '&lt;/a&gt;': '</a>'
+    }
 
-        # Восстанавливаем теги
-        replacements = {
-            '&lt;b&gt;': '<b>',
-            '&lt;/b&gt;': '</b>',
-            '&lt;i&gt;': '<i>',
-            '&lt;/i&gt;': '</i>',
-            '&lt;a href=&quot;': '<a href="',
-            '&quot;&gt;': '">',
-            '&lt;/a&gt;': '</a>'
-        }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
 
-        for old, new in replacements.items():
-            text = text.replace(old, new)
-
-        result['text'] = text.strip()
+    result['text'] = text.strip()
 
     return result

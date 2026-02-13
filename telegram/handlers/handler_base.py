@@ -4,6 +4,7 @@ from aiogram import Router, types, F
 from aiogram.filters import CommandStart
 from aiogram.types import ReplyKeyboardRemove
 
+from app.db.nocodb_client import NocoDBClient
 from app.db.roles import RoleChecker
 from app.services.cache import clear_user_auth, get_user_access_and_role
 from app.services.utils import normalize_phone, contains_restricted_emails
@@ -216,10 +217,19 @@ async def process_back_callback(callback_query: types.CallbackQuery):
         button_content = None
         if current_menu and current_menu.startswith('content:'):
             _, current_table_id, current_row_id = current_menu.split(':')
-            current_table_data = await fetch_table(current_table_id)
-            current_row = next((r for r in current_table_data if r['_id'] == current_row_id), None)
-            if current_row and current_row.get('Button_content'):
-                button_content = prepare_telegram_message(current_row['Button_content'])
+
+            async with NocoDBClient() as nocodb:
+                rows = await nocodb.get_all(
+                    table_id=current_table_id,
+                    where=f"(Id,eq,{current_row_id})"
+                )
+                if rows:
+                    current_row = rows[0]
+                    if current_row.get('Content_text') or current_row.get('Content_image'):
+                        button_content = prepare_telegram_message(
+                            text_content=current_row.get('Content_text', ''),
+                            image_url=current_row.get('Content_image')
+                        )
 
         # Удаляем текущее сообщение
         try:
@@ -227,12 +237,10 @@ async def process_back_callback(callback_query: types.CallbackQuery):
         except:
             pass
 
-        # Если был контент - постим его Button_content перед возвратом
+        # Если был контент - постим его перед возвратом
         if button_content:
-            # Проверяем, содержит ли контент персональные данные
             content_text = button_content.get('text', '')
             if not contains_restricted_emails(content_text):
-                # Только если не содержит персональных данных - постим
                 if button_content.get('image_url'):
                     await callback_query.message.answer_photo(
                         photo=button_content['image_url'],
@@ -261,13 +269,13 @@ async def process_back_callback(callback_query: types.CallbackQuery):
                     parse_mode="HTML"
                 )
             else:
-                if caption:  # Отправляем только если есть текст
+                if caption:
                     await callback_query.message.answer(
                         text=caption,
                         reply_markup=keyboard,
                         parse_mode="HTML"
                     )
-                elif keyboard:  # Если нет текста, но есть клавиатура
+                elif keyboard:
                     await callback_query.message.answer(
                         text=' ',
                         reply_markup=keyboard
@@ -279,18 +287,18 @@ async def process_back_callback(callback_query: types.CallbackQuery):
             if content and content.get('image_url'):
                 await callback_query.message.answer_photo(
                     photo=content['image_url'],
-                    caption=menu_text if menu_text else ' ',  # Пробел если пусто
+                    caption=menu_text if menu_text else ' ',
                     reply_markup=keyboard,
                     parse_mode="HTML"
                 )
             else:
-                if menu_text:  # Отправляем только если есть текст
+                if menu_text:
                     await callback_query.message.answer(
                         text=menu_text,
                         reply_markup=keyboard,
                         parse_mode="HTML"
                     )
-                elif keyboard:  # Если нет текста, но есть клавиатура
+                elif keyboard:
                     await callback_query.message.answer(
                         text=' ',
                         reply_markup=keyboard

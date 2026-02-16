@@ -54,8 +54,8 @@ async def create_broadcast_keyboard(notifications: List[Dict]) -> InlineKeyboard
     inline_keyboard = []
 
     for notification in notifications:
-        name = notification.get('Name', 'Без названия')
-        row_id = notification.get('_id')
+        name = notification.get('Section', 'Без названия')
+        row_id = notification.get('Id')
 
         if name and row_id:
             inline_keyboard.append([
@@ -77,13 +77,16 @@ async def create_broadcast_keyboard(notifications: List[Dict]) -> InlineKeyboard
 async def handle_broadcast_preview(callback_query: CallbackQuery, bot: Bot):
     """Обрабатывает выбор уведомления для предварительного просмотра"""
     try:
+        # Сразу отвечаем на callback, чтобы избежать таймаута
+        await callback_query.answer()
+
         # Извлекаем ID выбранного уведомления
         notification_id = callback_query.data.replace("broadcast_preview:", "")
 
         # Получаем данные уведомления
         notifications = await get_broadcast_notifications()
         selected_notification = next(
-            (n for n in notifications if n.get('_id') == notification_id),
+            (n for n in notifications if str(n.get('Id')) == notification_id),  # Приводим к строке
             None
         )
 
@@ -96,7 +99,7 @@ async def handle_broadcast_preview(callback_query: CallbackQuery, bot: Bot):
 
         # Отправляем тестовое уведомление администратору
         await callback_query.message.answer(
-            f"ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР: {selected_notification.get('Name', 'Без названия')} ⬇️"
+            f"ПРЕДВАРИТЕЛЬНЫЙ ПРОСМОТР: {selected_notification.get('Section', 'Без названия')} ⬇️"
         )
 
         # Отправляем контент уведомления администратору
@@ -128,8 +131,6 @@ async def handle_broadcast_preview(callback_query: CallbackQuery, bot: Bot):
             "Контент уведомления вас устраивает?",
             reply_markup=confirmation_keyboard
         )
-
-        await callback_query.answer()
 
     except Exception as e:
         logger.error(f"Broadcast preview error: {str(e)}")
@@ -379,7 +380,7 @@ async def handle_immediate_broadcast(callback_query: CallbackQuery, bot: Bot):
             return
 
         await callback_query.message.answer(
-            f"Запускаю рассылку: {notification.get('Name', 'Без названия')}"
+            f"Запускаю рассылку: {notification.get('Section', 'Без названия')}"
         )
 
         success = await send_broadcast_to_all_users(notification, bot)
@@ -495,7 +496,7 @@ async def send_broadcast_to_all_users(notification: Dict, bot: Bot) -> bool:
     try:
         # Получаем активных пользователей
         active_users = await get_active_users()
-        logger.info(f"Начинаю рассылку '{notification.get('Name')}' для {len(active_users)} пользователей")
+        logger.info(f"Начинаю рассылку '{notification.get('Section')}' для {len(active_users)} пользователей")
 
         # Подготавливаем контент один раз для всех пользователей
         content, file_data, filename = await prepare_notification_content(notification)
@@ -537,7 +538,7 @@ async def send_broadcast_to_all_users(notification: Dict, bot: Bot) -> bool:
 
 async def send_telegram_content(user_id: int, content: Dict, bot: Bot, keyboard: InlineKeyboardMarkup = None):
     """Отправляет контент пользователю в Telegram"""
-    if content.get('image_url'):
+    if content.get('image_url'):  # prepare_telegram_message создает image_url из content_image
         await bot.send_photo(
             chat_id=user_id,
             photo=content['image_url'],
@@ -599,7 +600,7 @@ async def schedule_broadcast(bot: Bot, notification: Dict, schedule_datetime: da
         # Сохраняем информацию о запланированной рассылке
         scheduled_broadcasts[broadcast_id] = {
             'task': task,
-            'notification_name': notification.get('Name', 'Без названия'),
+            'notification_name': notification.get('Section', 'Без названия'),
             'scheduled_time': schedule_datetime,
             'admin_id': admin_id
         }

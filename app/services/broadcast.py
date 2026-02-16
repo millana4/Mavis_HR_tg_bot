@@ -15,10 +15,10 @@ async def is_user_admin(user_id: int) -> bool:
     """Проверяет, является ли пользователь администратором"""
     try:
         # 1. Получаем таблицу админов
-        admins = await fetch_table(table_id=Config.SEATABLE_ADMIN_TABLE_ID, app='USER')
+        admins = await fetch_table(table_id=Config.ADMIN_TABLE_ID, app='USER')
 
         # 2. Получаем таблицу пользователей
-        users = await fetch_table(table_id=Config.SEATABLE_USERS_TABLE_ID, app='USER')
+        users = await fetch_table(table_id=Config.AUTH_TABLE_ID, app='USER')
 
         # 3. Ищем пользователя по ID мессенджера
         target_user = next(
@@ -30,31 +30,27 @@ async def is_user_admin(user_id: int) -> bool:
             logger.info(f"User {user_id} not found in users table")
             return False
 
-        target_user_id = target_user.get('_id')
-
         # 4. Проверяем всех админов
         for admin in admins:
-            # Проверяем доступ админа (права на просмотр всего контента и на отправку уведомлений)
-            if not admin.get('Content+broadcast_admin'):
+            admin_messenger_id = admin.get('ID_messenger')
+            if not admin_messenger_id:
                 continue
 
-            admin_messenger_ids = admin.get('ID_messenger', [])
-            if not isinstance(admin_messenger_ids, list):
-                continue
+            # Проверяем, что ID_messenger пользователя совпадает с ID_messenger админа
+            if str(admin_messenger_id) == str(user_id):
+                # Проверяем наличие хотя бы одной true-галки
+                if (admin.get('Content+broadcast_admin') or
+                        admin.get('Pulse_admin') or
+                        admin.get('Feedback_admin')):
+                    logger.info(f"Admin check SUCCESS: user_id={user_id}")
+                    return True
 
-            # Проверяем, что ID пользователя совпадает с ID из списка админа
-            if target_user_id in admin_messenger_ids:
-                logger.info(f"Admin check SUCCESS: user_id={user_id}, target_user_id={target_user_id}")
-                return True
-
-        logger.info(f"Admin check FAILED: user_id={user_id}, target_user_id={target_user_id} "
-                   f"not found in any admin list")
+        logger.info(f"Admin check FAILED: user_id={user_id} not found in any admin list")
         return False
 
     except Exception as e:
         logger.error(f"Error checking admin rights for {user_id}: {str(e)}", exc_info=True)
         return False
-
 
 async def get_broadcast_notifications() -> List[Dict]:
     """Получает список уведомлений для рассылки"""
@@ -63,7 +59,7 @@ async def get_broadcast_notifications() -> List[Dict]:
 
 async def get_active_users() -> List[Dict]:
     """Получает список активных пользователей"""
-    users = await fetch_table(table_id=Config.SEATABLE_USERS_TABLE_ID, app='USER')
+    users = await fetch_table(table_id=Config.AUTH_TABLE_ID, app='USER')
     return [user for user in users if user.get('ID_messenger')]
 
 
@@ -72,8 +68,14 @@ async def prepare_notification_content(notification: Dict) -> Tuple[Dict, bytes,
     Подготавливает контент уведомления для отправки
     Возвращает: (контент, файл_данные, имя_файла)
     """
-    content = prepare_telegram_message(notification.get('Content', ''))
+    # Получаем текст и изображение из уведомления
+    content_text = notification.get('Content_text', '')
+    content_image = notification.get('Content_image')
 
+    # Подготавливаем контент с текстом и сырым объектом изображения
+    content = prepare_telegram_message(content_text, content_image)
+
+    # Обрабатываем вложение (Attachment) - это внешняя ссылка на файл
     file_data = None
     filename = None
     attachment = notification.get('Attachment')
@@ -112,7 +114,7 @@ async def download_file(file_url: str) -> Tuple[bytes, str]:
 
 
 def extract_filename_from_html(html_content: str) -> str:
-    """Извлекает название файла из HTML Seafile"""
+    """Извлекает название файла из HTML"""
     try:
         # Ищем в og:title
         title_match = re.search(r'<meta property="og:title" content="([^"]+)"', html_content)

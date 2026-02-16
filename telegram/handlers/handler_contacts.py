@@ -90,7 +90,7 @@ async def handle_text_input_during_search_selection(message: Message):
         current_menu = user_data.get('current_menu')
 
         # Проверяем, что текущее меню - это сводная таблица
-        if current_menu != Config.SEATABLE_PIVOT_TABLE_ID:
+        if current_menu != Config.PIVOT_TABLE_ID:
             return
 
         # Автоматически запускаем поиск по ФИО
@@ -485,7 +485,7 @@ async def process_shop_input(message: Message):
         logger.info(f"Поиск по магазина по адресу: {search_query}")
 
         # Обращается по АПИ в таблицу со справочником магазинов и возвращает список магазинов
-        shops_data = await fetch_table(table_id=Config.SEATABLE_SHOP_TABLE_ID, app='USER')
+        shops_data = await fetch_table(table_id=Config.SHOP_TABLE_ID, app='USER')
 
         # После поиска показываем результаты и кнопку Назад
         searched_shop = await give_unit_data(search_query, shops_data)
@@ -541,7 +541,7 @@ async def process_drugstore_input(message: Message):
         logger.info(f"Поиск по аптеки по адресу: {search_query}")
 
         # Обращается по АПИ в таблицу со справочником магазинов и возвращает список магазинов
-        drugstore_data = await fetch_table(table_id=Config.SEATABLE_DRUGSTORE_TABLE_ID, app='USER')
+        drugstore_data = await fetch_table(table_id=Config.DRUGSTORE_TABLE_ID, app='USER')
 
         # После поиска показываем результаты и кнопку Назад
         searched_drugstore = await give_unit_data(search_query, drugstore_data)
@@ -706,7 +706,7 @@ async def delete_personal_data(bot: Bot, chat_id: int, message_id: int, delay_se
             await state_manager.update_data(
                 chat_id,
                 current_state=AppStates.WAITING_FOR_SEARCH_TYPE,
-                current_menu=Config.SEATABLE_PIVOT_TABLE_ID
+                current_menu=Config.PIVOT_TABLE_ID
             )
 
             # Отправляем сообщение с выбором типа поиска

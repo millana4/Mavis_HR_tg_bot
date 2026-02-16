@@ -28,8 +28,6 @@ async def fetch_table(table_id: str = "empty", app: str = "HR", limit: int = Non
         elif table_id == "empty" and app == 'HR':
             table_id = Config.MAIN_MENU_EMPLOYEE_ID
 
-        print(f"call table {table_id}")
-
         async with NocoDBClient() as client:
             return await client.get_all(
                 table_id=table_id,

@@ -1,3 +1,4 @@
+import pprint
 import re
 import logging
 from typing import List, Dict
@@ -19,7 +20,8 @@ async def get_department_list() -> List[str]:
 
         async with NocoDBClient() as client:
             # Получаем все записи из таблицы ATS_BOOK_ID
-            records = await client.get_all(table_id=Config.ATS_BOOK_ID, app='USER')
+            records = await client.get_all(table_id=Config.ATS_BOOK_ID)
+            pprint.pprint(records)
 
             # Собираем уникальные значения Department
             for record in records:
@@ -56,7 +58,7 @@ async def give_employee_data(search_type: str, search_query: str, employees: Lis
     for emp in employees:
         # Проверяем сегмент, если указан
         if selected_segment and selected_segment != "both":
-            company_segment = emp.get('Company_segment', [])
+            company_segment = emp.get('Company_segment')
             if not company_segment:
                 continue
 
@@ -65,11 +67,11 @@ async def give_employee_data(search_type: str, search_query: str, employees: Lis
 
             if selected_segment == "mavis":
                 # Для Мавис: МАВИС или ОБА
-                if company_segment[0] in ["МАВИС", "ОБА"]:
+                if company_segment in ["МАВИС", "ОБА"]:
                     segment_allowed = True
             elif selected_segment == "votonia":
                 # Для Вотоня: ВОТОНЯ или ОБА
-                if company_segment[0] in ["ВОТОНЯ", "ОБА"]:
+                if company_segment in ["ВОТОНЯ", "ОБА"]:
                     segment_allowed = True
 
             if not segment_allowed:

@@ -124,12 +124,10 @@ async def process_menu_callback(callback_query: types.CallbackQuery):
 
         # Получаем и обновляем состояние
         new_table_id = callback_query.data.split(':')[1]
-        print(new_table_id)
         await state_manager.navigate_to_menu(user_id, new_table_id)
 
         # Получаем данные меню
         state = await state_manager.get_current_menu(user_id)
-        print(state)
         content, keyboard = await handle_table_menu(
             new_table_id,
             str(user_id),

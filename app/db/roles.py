@@ -117,7 +117,7 @@ class RoleChecker:
                             'Role': 'employee'
                         }
 
-                        success = await update_auth(user.get('_id'), update_data)
+                        success = await update_auth(user.get('Id'), update_data)
                         updated_count += 1
                         if success:
                             logger.info(f"Роль пользователя {user.get('FIO')} изменилась: employee ")
@@ -135,7 +135,7 @@ class RoleChecker:
         Получает пользователей из авторизационной таблицы с ролью newcomer
         """
         try:
-            users = await fetch_table(table_id=Config.SEATABLE_USERS_TABLE_ID, app='USER')
+            users = await fetch_table(table_id=Config.AUTH_TABLE_ID, app='USER')
 
             if not users:
                 return []
@@ -158,7 +158,7 @@ class RoleChecker:
         Получает данные пользователей из сводной таблицы пользователей
         """
         try:
-            users = await fetch_table(table_id=Config.SEATABLE_PIVOT_TABLE_ID, app='USER')
+            users = await fetch_table(table_id=Config.PIVOT_TABLE_ID, app='USER')
 
             return users if users else []
 
@@ -192,7 +192,7 @@ class RoleChecker:
         """
         Проверяет и обновляет роль одного пользователя
         """
-        user_snils = user.get('Name')  # СНИЛС
+        user_snils = user.get('SNILS')
         if not user_snils:
             logger.warning(f"У пользователя нет СНИЛС: {user.get('FIO')}")
             return False
@@ -200,7 +200,7 @@ class RoleChecker:
         # Ищем пользователя в сводной таблице
         user_1c = None
         for u in users_1c:
-            if u.get('Name') == user_snils:
+            if u.get('SNILS') == user_snils:
                 user_1c = u
                 break
 

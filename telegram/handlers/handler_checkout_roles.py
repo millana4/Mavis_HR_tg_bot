@@ -6,6 +6,7 @@ from app.db.roles import RoleChecker
 from app.services.fsm import state_manager
 from app.services.cache import clear_user_auth
 from config import Config
+from telegram.handlers.handler_table import handle_table_menu
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ async def handle_checkout_newcomer(message: Message):
         await state_manager.update_data(user_id, role="newcomer")
 
         # Устанавливаем главное меню для новичка
-        main_menu_id = Config.SEATABLE_MAIN_MENU_NEWCOMER_ID
+        main_menu_id = Config.MAIN_MENU_NEWCOMER_ID
         await state_manager.navigate_to_menu(user_id, main_menu_id)
 
         # Получаем и показываем контент меню
@@ -81,11 +82,10 @@ async def handle_checkout_employee(message: Message):
         await state_manager.update_data(user_id, role="employee")
 
         # Устанавливаем главное меню для сотрудника
-        main_menu_id = Config.SEATABLE_MAIN_MENU_EMPLOYEE_ID
+        main_menu_id = Config.MAIN_MENU_EMPLOYEE_ID
         await state_manager.navigate_to_menu(user_id, main_menu_id)
 
         # Получаем и показываем контент меню
-        from telegram.handlers.handler_table import handle_table_menu
         content, keyboard = await handle_table_menu(main_menu_id, str(user_id), message=message)
 
         kwargs = {'reply_markup': keyboard, 'parse_mode': 'HTML'}

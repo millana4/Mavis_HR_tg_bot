@@ -33,7 +33,7 @@ async def search_users_by_fio(search_query: str) -> List[Dict]:
     try:
         # Получаем данные пользователей
         users = await fetch_table(
-            table_id=Config.SEATABLE_USERS_TABLE_ID,
+            table_id=Config.AUTH_TABLE_ID,
             app='USER'
         )
 
@@ -75,7 +75,7 @@ async def get_leaving_poll_content() -> Dict:
     """Получает контент опроса при увольнении"""
     try:
         content_items = await fetch_table(
-            table_id=Config.SEATABLE_PULSE_CONTENT_ID,
+            table_id=Config.PULSE_CONTENT_ID,
             app='PULSE'
         )
 

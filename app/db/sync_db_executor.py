@@ -109,7 +109,7 @@ async def get_auth() -> Dict[str, List[Dict]]:
         # Группируем по СНИЛС, так как у одного пользователя может быть несколько записей
         grouped_by_snils = {}
         for user in auth_users:
-            snils = user.get('Name')
+            snils = user.get('SNILS')
             if snils:
                 if snils not in grouped_by_snils:
                     grouped_by_snils[snils] = []

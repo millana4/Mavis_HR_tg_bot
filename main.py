@@ -2,6 +2,7 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 
+from app.db.sync_1c import start_sync_scheduler
 from app.services.fsm import state_manager
 from config import Config
 from app.services.pulse_sender import start_pulse_sender_scheduler
@@ -25,7 +26,7 @@ async def main():
 
     # Планировщик синхронизации бота с данными пользователей из 1С + рассылки пульс-опросов
     scheduler_tasks = [
-        # asyncio.create_task(start_sync_scheduler()),
+        asyncio.create_task(start_sync_scheduler()),
         asyncio.create_task(start_pulse_sender_scheduler(bot))
     ]
 

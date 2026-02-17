@@ -191,15 +191,15 @@ class PulseTaskCreator:
 
         return adjusted_date, was_adjusted
 
-
+    @staticmethod
     async def task_exists(snils: str, poll_type: str) -> bool:
         """
         Проверяет, существует ли уже задача для данного пользователя и типа опроса в NocoDB
         """
         try:
             async with NocoDBClient() as client:
-                # Создаем фильтр: Name == snils AND Type == poll_type
-                where_filter = f"(Name,eq,{snils})~and(Type,eq,{poll_type})"
+                # Создаем фильтр: snils AND Type == poll_type
+                where_filter = f"(SNILS,eq,{snils})~and(Type,eq,{poll_type})"
 
                 tasks = await client.get_all(
                     table_id=Config.PULSE_TASKS_ID,
@@ -224,7 +224,7 @@ class PulseTaskCreator:
         Создает одну задачу пульс-опроса
         """
         # Проверяем, не существует ли уже такая задача
-        snils = user_data.get('Name')
+        snils = user_data.get('SNILS')
         if await self.task_exists(snils, poll_type):
             logger.info(f"Задача уже существует, пропускаем: {snils} - {poll_type}")
             return True  # Считаем успехом, т.к. задача уже есть
@@ -235,7 +235,7 @@ class PulseTaskCreator:
         # Подготавливаем данные для записи
         task_data = {
             'FIO': user_data.get('FIO'),
-            'Name': snils,  # СНИЛС
+            'SNILS': snils,  # СНИЛС
             'Department': user_data.get('Department'),
             'Position': user_data.get('Position'),
             'Email': user_data.get('Email'),
@@ -251,19 +251,30 @@ class PulseTaskCreator:
             'Date_adjusted': was_adjusted  # Флаг корректировки даты
         }
 
-        # Записываем в таблицу через NocoDB API
-        try:
-            async with NocoDBClient() as client:
-                result = await client.create_record(table_id=Config.PULSE_TASKS_ID, data=task_data)
-                if result:
-                    logger.info(f"Задача на пульс-опрос создана: {task_data.get('FIO')} - {task_data.get('Type')}")
-                    return True
+        # Записываем в таблицу через NocoDB API. Пытаемся сохранить с повторными попытками, если сразе не удалось
+        max_retries = 3
+        retry_delay = 5  # секунд
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                async with NocoDBClient() as client:
+                    result = await client.create_record(table_id=Config.PULSE_TASKS_ID, data=task_data)
+                    if result:
+                        logger.info(f"Задача на пульс-опрос создана: {task_data.get('FIO')} - {task_data.get('Type')}")
+                        return True
+                    else:
+                        logger.error(f"Ошибка создания задачи: {task_data.get('FIO')} - {task_data.get('Type')}")
+                        return False
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Попытка {attempt}/{max_retries} не удалась для {snils} - {poll_type}: {e}. Повтор через {retry_delay} сек.")
+                    await asyncio.sleep(retry_delay)
                 else:
-                    logger.error(f"Ошибка создания задачи: {task_data.get('FIO')} - {task_data.get('Type')}")
+                    logger.error(f"Все {max_retries} попыток не удались для {snils} - {poll_type}: {e}")
                     return False
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении задачи: {e}")
-            return False
+
+        return False
 
 
     async def _create_pulse_for_user(user: User) -> bool:
@@ -273,7 +284,7 @@ class PulseTaskCreator:
         # Конвертируем User в dict для передачи
         user_dict = {
             'FIO': user.fio,
-            'Name': user.snils,
+            'SNILS': user.snils,
             'Department': user.department,
             'Position': user.position,
             'Data_employment': user.employment_date.isoformat() if user.employment_date else None

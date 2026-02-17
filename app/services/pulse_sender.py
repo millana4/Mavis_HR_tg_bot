@@ -12,7 +12,7 @@ from telegram.content import prepare_telegram_message
 
 logger = logging.getLogger(__name__)
 
-sending_time = time(11, 00)
+sending_time = time(16, 11)
 
 
 class PulseSender:
@@ -56,17 +56,17 @@ class PulseSender:
                     success = await self._send_single_pulse(task, poll_content)
                     if success:
                         sent_tasks.append(task)
-                        # Обновляем статус задачи на "send"
-                        await self._update_task_status(task.get('_id'), 'sent')
+                        # Обновляем статус задачи на "sent"
+                        await self._update_task_status(task.get('Id'), 'sent')
                     else:
                         failed_tasks.append(task)
                         # Обновляем статус задачи на "declined"
-                        await self._update_task_status(task.get('_id'), 'declined')
+                        await self._update_task_status(task.get('Id'), 'declined')
 
                 except Exception as e:
-                    logger.error(f"Ошибка отправки задачи {task.get('_id')}: {e}")
+                    logger.error(f"Ошибка отправки задачи {task.get('Id')}: {e}")
                     failed_tasks.append(task)
-                    await self._update_task_status(task.get('_id'), 'declined')
+                    await self._update_task_status(task.get('Id'), 'declined')
 
             # Уведомляем админов о неудачных отправках
             if failed_tasks and admins:
@@ -117,7 +117,7 @@ class PulseSender:
         """
         try:
             content = await fetch_table(
-                table_id=Config.SEATABLE_PULSE_CONTENT_ID,
+                table_id=Config.PULSE_CONTENT_ID,
                 app='PULSE'
             )
 
@@ -137,7 +137,6 @@ class PulseSender:
             logger.error(f"Ошибка получения контента опросов: {e}")
             return {}
 
-
     async def _get_pulse_admins(self) -> List[Dict]:
         """
         Получает список админов с правами Pulse_admin
@@ -146,46 +145,25 @@ class PulseSender:
         try:
             # Получаем таблицу админов
             admins = await fetch_table(
-                table_id=Config.SEATABLE_ADMIN_TABLE_ID,
+                table_id=Config.ADMIN_TABLE_ID,
                 app='USER'
             )
 
             if not admins:
                 return []
 
-            # Получаем таблицу пользователей чтобы связать ID строк с Telegram ID
-            users = await fetch_table(
-                table_id=Config.SEATABLE_USERS_TABLE_ID,
-                app='USER'
-            )
-
-            if not users:
-                return []
-
-            # Создаем маппинг: user_row_id -> telegram_id
-            user_id_to_telegram = {}
-            for user in users:
-                user_id = user.get('_id')
-                telegram_id = user.get('ID_messenger')
-                if user_id and telegram_id:
-                    user_id_to_telegram[user_id] = telegram_id
-
             pulse_admins = []
 
             for admin in admins:
                 if admin.get('Pulse_admin') is True:
-                    messenger_ids = admin.get('ID_messenger', [])
-                    if isinstance(messenger_ids, list):
-                        for user_row_id in messenger_ids:
-                            telegram_id = user_id_to_telegram.get(user_row_id)
-                            if telegram_id:
-                                pulse_admins.append({
-                                    'row_id': user_row_id,
-                                    'telegram_id': telegram_id,
-                                    'fio': admin.get('FIO', 'Администратор')
-                                })
-                            else:
-                                logger.warning(f"Не найден Telegram ID для пользователя с row_id: {user_row_id}")
+                    telegram_id = admin.get('ID_messenger')
+                    if telegram_id:
+                        pulse_admins.append({
+                            'telegram_id': telegram_id,
+                            'fio': admin.get('FIO', 'Администратор')
+                        })
+                    else:
+                        logger.warning(f"У админа {admin.get('FIO')} нет ID_messenger")
 
             logger.info(f"Найдено админов с Pulse_admin: {len(pulse_admins)}")
             return pulse_admins
@@ -201,7 +179,7 @@ class PulseSender:
         """
         try:
             users = await fetch_table(
-                table_id=Config.SEATABLE_USERS_TABLE_ID,
+                table_id=Config.AUTH_TABLE_ID,
                 app='USER'
             )
 
@@ -209,7 +187,7 @@ class PulseSender:
                 return None
 
             for user in users:
-                if user.get('Name') == snils:
+                if user.get('SNILS') == snils:
                     messenger_id = user.get('ID_messenger')
                     return str(messenger_id) if messenger_id else None
 
@@ -223,7 +201,7 @@ class PulseSender:
     async def _send_single_pulse(self, task: Dict, poll_content: Dict[str, Dict]) -> bool:
         """Отправляет один пульс-опрос пользователю"""
         try:
-            logger.info(f"Начинаем отправку задачи {task.get('_id')}")
+            logger.info(f"Начинаем отправку задачи {task.get('Id')}")
 
             snils = task.get('Name')
             messenger_id = await self._get_user_messenger_id(snils)
@@ -246,8 +224,9 @@ class PulseSender:
                 return False
 
             # Подготавливаем контент для отправки
-            content_text = content_item.get('Content', '')
-            prepared_content = prepare_telegram_message(content_text)
+            content_text = content_item.get('Content_text', '')
+            image_url = content_item.get('Content_image', None)
+            prepared_content = prepare_telegram_message(content_text, image_url)
 
             logger.info(f"Контент подготовлен: {'есть текст' if prepared_content.get('text') else 'нет текста'}, "
                         f"{'есть изображение' if prepared_content.get('image_url') else 'нет изображения'}")

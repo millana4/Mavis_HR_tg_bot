@@ -33,34 +33,39 @@ roles_check_time = [time(14, 0)]
 
 async def get_all_1c_users() -> List[Dict]:
     """
-    Получает всех пользователей из 1С - два запроса
+    Получает всех пользователей из 1С из таблицы DATA_1C_TABLE_ID.
+    Использует пагинацию NocoDB (limit/offset).
     """
     logger.info("Получение данных из 1С")
 
-    # Первый запрос - первые 1000 записей
-    first_batch = await fetch_table(table_id=Config.SEATABLE_1C_TABLE_ID, app='USER', limit=1000, start=0)
+    # Используем limit=1000 (максимальный размер страницы в NocoDB)
+    first_batch = await fetch_table(table_id=Config.DATA_1C_TABLE_ID, app='USER', limit=1000, offset=0)
 
     if not first_batch:
         return []
 
-    # Второй запрос - остальные записи
-    second_batch = await fetch_table(table_id=Config.SEATABLE_1C_TABLE_ID, app='USER', start=1000)
+    # Второй запрос - остальные записи (offset=1000)
+    second_batch = await fetch_table(table_id=Config.DATA_1C_TABLE_ID, app='USER', offset=1000)
 
     if second_batch:
         result = first_batch + second_batch
         logger.info(f"Всего получено {len(result)} записей")
         return result
-    else:
-        return first_batch
 
+    return first_batch
 
 def aggregate_1c_users(users_data: List[Dict]) -> Dict[str, User]:
+    logger.info(f"Агрегация {len(users_data)} записей из 1С")
     users_by_snils = defaultdict(list)
 
-    for row in users_data:
-        snils = row.get('Name')
+    for i, row in enumerate(users_data):
+        snils = row.get('SNILS')
         if snils:
             users_by_snils[snils].append(row)
+        else:
+            logger.warning(f"Строка {i} не содержит SNILS: {row.get('FIO', 'нет ФИО')}")
+
+    logger.info(f"Сгруппировано по СНИЛС: {len(users_by_snils)} уникальных пользователей")
 
     aggregated_users = {}
 
@@ -68,9 +73,12 @@ def aggregate_1c_users(users_data: List[Dict]) -> Dict[str, User]:
         if not rows:
             continue
 
+        logger.debug(f"Агрегация пользователя {snils}, строк: {len(rows)}")
+
         # создаём пользователя из первой строки
         user = User.from_1c_data(rows[0])
         if not user:
+            logger.error(f"Не удалось создать User из первой строки для {snils}")
             continue
 
         all_phones = set(user.phones)
@@ -91,7 +99,7 @@ def aggregate_1c_users(users_data: List[Dict]) -> Dict[str, User]:
             if date_str:
                 try:
                     row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                    if not earliest_date or row_date < earliest_date:
+                    if not earliest_date or (row_date and row_date < earliest_date):
                         earliest_date = row_date
                 except:
                     pass
@@ -105,9 +113,14 @@ def aggregate_1c_users(users_data: List[Dict]) -> Dict[str, User]:
                 phones_from_row = []
 
             # создаем трудоустройство
-            company_name = row.get('Company', '').strip()
-            dept_name = row.get('Department', '').strip()
-            pos_name = row.get('Position', '').strip()
+            company_name = row.get('Company', '')
+            company_name = company_name.strip() if company_name else ''
+
+            dept_name = row.get('Department', '')
+            dept_name = dept_name.strip() if dept_name else ''
+
+            pos_name = row.get('Position', '')
+            pos_name = pos_name.strip() if pos_name else ''
 
             company = None
             if company_name:
@@ -135,15 +148,21 @@ def aggregate_1c_users(users_data: List[Dict]) -> Dict[str, User]:
             employments.append(employment)
 
             # строки для сравнения (одна на каждое сочетание)
+            fio = row.get('FIO', '')
+            fio = fio.strip() if fio else ''
+
+            prev_surname_val = row.get('Previous_surname', '')
+            prev_surname_val = prev_surname_val.strip() if prev_surname_val else ''
+
             for phone in phones_from_row or ['']:
                 emp_str = (
                     f"{company_name}|{dept_name}|{pos_name}|"
-                    f"{row.get('FIO','').strip()}|"
-                    f"{row.get('Previous_surname','').strip()}|{phone}"
+                    f"{fio}|"
+                    f"{prev_surname_val}|{phone}"
                 )
                 employment_strings.add(emp_str)
 
-        # финальная сборка пользователя
+            # финальная сборка пользователя
         user.employments = employments
         user.employment_strings = employment_strings
         user.previous_surname = list(previous_surnames) if previous_surnames else None
@@ -151,7 +170,9 @@ def aggregate_1c_users(users_data: List[Dict]) -> Dict[str, User]:
         user.phones = list(all_phones)
 
         aggregated_users[snils] = user
+        logger.debug(f"Успешно агрегирован пользователь: {user.fio}")
 
+    logger.info(f"Агрегация завершена, создано {len(aggregated_users)} пользователей")
     return aggregated_users
 
 
@@ -161,13 +182,12 @@ async def get_pivot_table_users() -> Dict[str, Dict]:
     Возвращает словарь {snils: row_data}
     """
     try:
-        pivot_users = await fetch_table(table_id=Config.SEATABLE_PIVOT_TABLE_ID, app='USER')
+        pivot_users = await fetch_table(table_id=Config.PIVOT_TABLE_ID, app='USER')
 
         if not pivot_users:
-            print("ybctuj")
             return {}
 
-        return {user.get('Name'): user for user in pivot_users if user.get('Name')}
+        return {user.get('SNILS'): user for user in pivot_users if user.get('SNILS')}
 
     except Exception as e:
         logger.error(f"Ошибка получения пользователей из сводной таблицы: {e}")
@@ -279,7 +299,7 @@ async def sync_pivot(users_from_1c: Dict[str, User], users_in_pivot: Dict[str, D
                 if pivot_data_changed(existing_data, new_data) or date_was_added_now:
                     logger.info(f"Обновление данных пользователя: {user.fio} (СНИЛС: {snils})")
                     new_data['Is_archived'] = False
-                    success = await update_pivot(existing_data['_id'], new_data)
+                    success = await update_pivot(existing_data['Id'], new_data)
                     if success:
                         updated_count += 1
                         logger.info(f"Обновлён: {user.fio}")
@@ -326,7 +346,7 @@ async def sync_pivot(users_from_1c: Dict[str, User], users_in_pivot: Dict[str, D
             user_data = users_in_pivot[snils]
             fio = user_data.get('FIO', 'нет ФИО')
 
-            success = await archive_pivot(user_data['_id'], user_data)
+            success = await archive_pivot(user_data['Id'], user_data)
             if success:
                 archived_count += 1
                 logger.info(f"Архивирован: {fio} (СНИЛС: {snils})")
@@ -415,7 +435,7 @@ async def sync_auth(pivot_users):
                     # Пользователь еще отсутствует в авторизационной таблице - создаем записи по каждому МОБИЛЬНОМУ телефону
                     for phone in mobile_phones:
                         auth_record = {
-                            'Name': snils,
+                            'SNILS': snils,
                             'FIO': fio,
                             'Phone': phone,
                             'Role': role.value,
@@ -441,7 +461,7 @@ async def sync_auth(pivot_users):
                         for record in records_to_update:
                             logger.debug(
                                 f"Обновление записи FIO={record.get('FIO')}→{fio}, Role={record.get('Role')}→{role.value}")
-                            success = await update_auth(record['_id'], {'FIO': fio, 'Role': role.value})
+                            success = await update_auth(record['Id'], {'FIO': fio, 'Role': role.value})
                             if success:
                                 updated_count += 1
                     else:
@@ -455,7 +475,7 @@ async def sync_auth(pivot_users):
                         logger.info(f"Добавляем {len(new_phones)} новых телефонов для {fio}")
                         for phone in new_phones:
                             auth_record = {
-                                'Name': snils,
+                                'SNILS': snils,
                                 'FIO': fio,
                                 'Phone': phone,
                                 'Role': role.value,
@@ -480,7 +500,7 @@ async def sync_auth(pivot_users):
                     records_to_delete = auth_users_updated[snils]
                     logger.info(f"Удаление {len(records_to_delete)} записей архивного пользователя: СНИЛС={snils}")
                     for record in records_to_delete:
-                        success = await delete_auth(record['_id'])
+                        success = await delete_auth(record['Id'])
                         if success:
                             deleted_count += 1
                 except Exception as e:
@@ -508,7 +528,7 @@ async def create_pulse(user: User):
         return
 
     user_dict = {
-        'Name': user.id,  # СНИЛС
+        'SNILS': user.id,
         'FIO': user.fio,
         'Department': (
             user.employments[0].department.title

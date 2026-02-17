@@ -96,7 +96,7 @@ class User(BaseModel):
     def from_1c_data(cls, row_data: Dict) -> Optional['User']:
         """Создает пользователя из данных 1С"""
         try:
-            snils = row_data.get('Name')
+            snils = row_data.get('SNILS')
             fio = row_data.get('FIO')
 
             if not snils or not fio:
@@ -192,7 +192,7 @@ class User(BaseModel):
         company_segment = CompanySegmentDetector.detect_segment_for_companies(company_names_list)
 
         return {
-            'Name': self.id,  # СНИЛС
+            'SNILS': self.id,
             'FIO': self.fio,
             'Previous_surname': self.previous_surname,
             'Company_segment': company_segment.value,
@@ -218,7 +218,7 @@ class User(BaseModel):
         if self.phones:
             for phone in self.phones:
                 auth_records.append({
-                    'Name': self.id,  # СНИЛС
+                    'SNILS': self.id,  # СНИЛС
                     'FIO': self.fio,
                     'Phone': phone,
                     'Role': None,

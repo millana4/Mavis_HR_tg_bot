@@ -175,8 +175,7 @@ async def handle_name_search(callback_query: types.CallbackQuery):
 
         # Просим ввести ФИО
         await callback_query.message.answer(
-            text="Укажите, пожалуйста, фамилию и/или полное имя сотрудника, например: Иван Соколов или Соколов Иван, "
-                 "или Соколов, или просто Иван.",
+            text="Укажите, пожалуйста, фамилию и/или имя сотрудника.",
             reply_markup=BACK_TO_SEARCH_TYPE,
         )
 
@@ -245,7 +244,6 @@ async def show_employee(searched_employees: List[Dict], message: Message):
 
     # Если ничего не нашли
     if not searched_employees:
-        # Возвращаем к выбору типа поиска
         sent_message = await message.answer(
             "К сожалению, ничего не нашли. Попробуйте другой запрос или выберите другой способ поиска:",
             reply_markup=SEARCH_TYPE_KEYBOARD
@@ -255,24 +253,36 @@ async def show_employee(searched_employees: List[Dict], message: Message):
 
     text_blocks = []
 
-    # Если один результат и есть фото
+    # Если один результат
     if len(searched_employees) == 1:
         emp = searched_employees[0]
-        photo_urls = emp.get("Photo", [])
         text = format_employee_text(emp)
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="search_back")]]
         )
 
-        if photo_urls:
-            sent_message = await message.answer_photo(
-                photo=photo_urls[0],
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=keyboard
-            )
+        photo_url = emp.get("Photo")  # Получаем строку, а не список
+
+        if photo_url:
+            try:
+                # Пробуем отправить с фото
+                sent_message = await message.answer_photo(
+                    photo=photo_url,
+                    caption=text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                # Если фото не отправилось, логируем ошибку и отправляем без фото
+                logger.warning(f"Не удалось отправить фото для {emp.get('FIO')}: {e}")
+                sent_message = await message.answer(
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
         else:
+            # Если фото нет, отправляем без фото
             sent_message = await message.answer(
                 text=text,
                 parse_mode="HTML",

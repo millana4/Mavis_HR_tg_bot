@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Dict, List, Optional
 import asyncio
 from aiogram import Bot
@@ -12,7 +12,7 @@ from telegram.content import prepare_telegram_message
 
 logger = logging.getLogger(__name__)
 
-sending_time = time(16, 11)
+sending_time = time(10, 47)
 
 
 class PulseSender:
@@ -46,6 +46,7 @@ class PulseSender:
 
             # Получаем список админов для уведомлений
             admins = await self._get_pulse_admins()
+            logger.info(f"Админы для отправки уведомлений {admins}")
 
             # Отправляем каждую задачу
             sent_tasks = []
@@ -81,10 +82,10 @@ class PulseSender:
     async def _get_tasks_for_today(self) -> List[Dict]:
         """Получает задачи которые нужно отправить сегодня"""
         try:
-            from app.db.nocodb_client import NocoDBClient
-
             async with NocoDBClient() as client:
                 tasks = await client.get_all(table_id=Config.PULSE_TASKS_ID)
+
+            logger.info(f'Найденные задачи в таблице {tasks}')
 
             if not tasks:
                 logger.info("Нет задач в таблице пульс-опросов")
@@ -97,7 +98,6 @@ class PulseSender:
             for task in tasks:
                 task_date = task.get('Data_poll')
                 task_status = task.get('Status')
-                task_type = task.get('Type')
 
                 # Проверяем что задача сегодня и статус waiting
                 if (task_date == today_str and task_status == 'waiting'):
@@ -165,33 +165,35 @@ class PulseSender:
                     else:
                         logger.warning(f"У админа {admin.get('FIO')} нет ID_messenger")
 
-            logger.info(f"Найдено админов с Pulse_admin: {len(pulse_admins)}")
+            logger.info(f"Найдено админов с Pulse_admin - {len(pulse_admins)}: {pulse_admins}")
             return pulse_admins
 
         except Exception as e:
             logger.error(f"Ошибка получения админов: {e}")
             return []
 
-
     async def _get_user_messenger_id(self, snils: str) -> Optional[str]:
         """
-        Получает ID_messenger пользователя по СНИЛС
+        Получает ID_messenger пользователя по СНИЛС через фильтрацию NocoDB
         """
         try:
-            users = await fetch_table(
-                table_id=Config.AUTH_TABLE_ID,
-                app='USER'
-            )
+            async with NocoDBClient() as client:
+                # Фильтруем по SNILS, получаем только одну запись
+                where_filter = f"(SNILS,eq,{snils})"
+                users = await client.get_all(
+                    table_id=Config.AUTH_TABLE_ID,
+                    where=where_filter,
+                    limit=1
+                )
 
-            if not users:
-                return None
+                if not users:
+                    logger.info(f"Пользователь с СНИЛС {snils} не найден")
+                    return None
 
-            for user in users:
-                if user.get('SNILS') == snils:
-                    messenger_id = user.get('ID_messenger')
-                    return str(messenger_id) if messenger_id else None
-
-            return None
+                user = users[0]
+                messenger_id = user.get('ID_messenger')
+                logger.info(f"Найден новичок для отправки {messenger_id}")
+                return str(messenger_id) if messenger_id else None
 
         except Exception as e:
             logger.error(f"Ошибка получения ID_messenger для {snils}: {e}")
@@ -201,9 +203,9 @@ class PulseSender:
     async def _send_single_pulse(self, task: Dict, poll_content: Dict[str, Dict]) -> bool:
         """Отправляет один пульс-опрос пользователю"""
         try:
-            logger.info(f"Начинаем отправку задачи {task.get('Id')}")
+            logger.info(f"Начинаем отправку задачи {task.get('Id')}: {task}")
 
-            snils = task.get('Name')
+            snils = task.get('SNILS')
             messenger_id = await self._get_user_messenger_id(snils)
 
             if not messenger_id:
@@ -302,7 +304,7 @@ class PulseSender:
             # Подготавливаем данные для обновления
             update_data = {
                 "Status": status,
-                "Sent_date": datetime.now().isoformat() if status == 'send' else None
+                "Sent_date": datetime.now().isoformat() if status == 'sent' else None
             }
 
             async with NocoDBClient() as client:
@@ -390,8 +392,6 @@ async def _wait_until(target_time: time):
     """
     Ждет до указанного времени по Москве
     """
-    from datetime import datetime, timedelta
-
     now_utc = datetime.utcnow()
     moscow_offset = timedelta(hours=3)
     now_msk = now_utc + moscow_offset

@@ -103,11 +103,12 @@ async def send_leaving_poll(user_id: int, fio: str, bot) -> bool:
             logger.error("Контент опроса 'leaving' не найден")
             return False
 
-        # Подготавливаем контент
-        content_text = poll_content.get('Content', '')
-        prepared_content = prepare_telegram_message(content_text)
+        # Подготавливаем контент - теперь передаем оба параметра
+        content_text = poll_content.get('Content_text', '')
+        content_image = poll_content.get('Content_image')
+        prepared_content = prepare_telegram_message(content_text, content_image)
 
-        # Отправляем сообщение
+        # Отправляем сообщение (остается без изменений)
         if prepared_content.get('image_url'):
             await bot.send_photo(
                 chat_id=int(user_id),
@@ -130,7 +131,6 @@ async def send_leaving_poll(user_id: int, fio: str, bot) -> bool:
 
     except Exception as send_error:
         error_msg = str(send_error).lower()
-
         if "forbidden" in error_msg and ("bot was blocked" in error_msg or "bot blocked" in error_msg):
             logger.warning(f"Пользователь {user_id} заблокировал бота")
             return False

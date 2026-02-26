@@ -3,24 +3,24 @@ import re
 import logging
 from typing import List, Dict
 
+from config import Config
+from app.db.nocodb_client import NocoDBClient
+
 
 logger = logging.getLogger(__name__)
 
 
-async def get_department_list() -> List[str]:
+async def get_department_list(table_id: str) -> List[str]:
     """
-    Получает список отделов из таблицы ATS_BOOK_ID.
+    Получает список отделов из таблицы ATS_MAVIS_BOOK_ID или ATS_VOTONIA_BOOK_ID.
     Запрашивает все записи, извлекает уникальные значения поля Department.
     """
     try:
-        from app.db.nocodb_client import NocoDBClient
-        from config import Config
-
         departments = set()
 
         async with NocoDBClient() as client:
             # Получаем все записи из таблицы ATS_BOOK_ID
-            records = await client.get_all(table_id=Config.ATS_BOOK_ID)
+            records = await client.get_all(table_id)
 
             # Собираем уникальные значения Department
             for record in records:

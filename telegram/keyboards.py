@@ -27,7 +27,8 @@ SEARCH_SEGMENT_KEYBOARD = InlineKeyboardMarkup(inline_keyboard=[
 
 # Клавиатура для выбора подразделений
 SEARCH_COMPANY_GROUP = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Телефоны отделов «Мавис»", callback_data="search_by_department")],
+    [InlineKeyboardButton(text="Телефоны отделов «Мавис»", callback_data="search_by_department_mavis")],
+    [InlineKeyboardButton(text="Телефоны отделов «Вотоня»", callback_data="search_by_department_votonia")],
     [InlineKeyboardButton(text="Магазины «Вотоня»", callback_data="search_shop")],
     [InlineKeyboardButton(text="Аптеки «Имбирь»", callback_data="search_drugstore")],
     [InlineKeyboardButton(text="⬅️ Назад", callback_data="search_back")]

@@ -345,8 +345,8 @@ async def handle_company_group_search(callback_query: types.CallbackQuery):
         await callback_query.answer("Ошибка при выборе подразделения в справочнике", show_alert=True)
 
 
-# Обработчик выбора "Телефоны отделов"
-@router.callback_query(lambda c: c.data == "search_by_department")
+# Обработчик выбора "Телефоны отделов Мавис"
+@router.callback_query(lambda c: c.data == "search_by_department_mavis")
 async def handle_department_search(callback_query: types.CallbackQuery):
     """Обрабатывает выбор поиска по отделу"""
     try:
@@ -365,11 +365,11 @@ async def handle_department_search(callback_query: types.CallbackQuery):
         await callback_query.message.edit_reply_markup(reply_markup=None)
 
         # Создаём инлайн-клавиатуру с отделами
-        keyboard = await create_department_keyboard()
+        keyboard = await create_department_keyboard(Config.ATS_MAVIS_BOOK_ID)
 
         # Устанавливаем состояние ожидания ввода отдела
-        await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_DEPARTMENT_SEARCH)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_DEPARTMENT_SEARCH}")
+        await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_DEPARTMENT_MAVIS_SEARCH)
+        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_DEPARTMENT_MAVIS_SEARCH}")
 
         # Отправляем инлайн-клавиатуру пользователю
         await callback_query.message.answer("Выберите, пожалуйста, отдел:", reply_markup=keyboard)
@@ -377,17 +377,53 @@ async def handle_department_search(callback_query: types.CallbackQuery):
         await callback_query.answer()
 
     except Exception as e:
-        logger.error(f"Department search callback error: {str(e)}", exc_info=True)
+        logger.error(f"Department search ATS Mavis callback error: {str(e)}", exc_info=True)
         await callback_query.answer("Ошибка при выборе поиска по отделу", show_alert=True)
 
 
-async def create_department_keyboard() -> InlineKeyboardMarkup:
+# Обработчик выбора "Телефоны отделов Вотоня"
+@router.callback_query(lambda c: c.data == "search_by_department_votonia")
+async def handle_department_search(callback_query: types.CallbackQuery):
+    """Обрабатывает выбор поиска по отделу"""
+    try:
+        user_id = callback_query.from_user.id
+
+        # Проверяем права доступа и выходим если нет доступа
+        has_access = await check_access(callback_query=callback_query)
+        if not has_access:
+            return
+
+        user_data = await state_manager.get_data(user_id)
+        if user_data.get('current_state') != AppStates.WAITING_FOR_COMPANY_GROUP_SEARCH:
+            return
+
+        # Убираем инлайн-клавиатуру типа поиска
+        await callback_query.message.edit_reply_markup(reply_markup=None)
+
+        # Создаём инлайн-клавиатуру с отделами
+        keyboard = await create_department_keyboard(Config.ATS_VOTONIA_BOOK_ID)
+
+        # Устанавливаем состояние ожидания ввода отдела
+        await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_DEPARTMENT_VOTONIA_SEARCH)
+        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_DEPARTMENT_VOTONIA_SEARCH}")
+
+        # Отправляем инлайн-клавиатуру пользователю
+        await callback_query.message.answer("Выберите, пожалуйста, отдел:", reply_markup=keyboard)
+
+        await callback_query.answer()
+
+    except Exception as e:
+        logger.error(f"Department ATS Votonia search callback error: {str(e)}", exc_info=True)
+        await callback_query.answer("Ошибка при выборе поиска по отделу", show_alert=True)
+
+
+async def create_department_keyboard(table_id: str) -> InlineKeyboardMarkup:
     """
     Создает клавиатуру со списком доступных отделов, по которым можно получить телефоны.
     Кнопки выводятся по 2 в строку.
     """
     # Получаем из справочника список отделов
-    department_list = await get_department_list()
+    department_list = await get_department_list(table_id)
 
     inline_keyboard = []
 
@@ -424,7 +460,11 @@ async def process_department_input(callback_query: types.CallbackQuery):
 
         # Проверяем, что пользователь в правильном состоянии
         user_data = await state_manager.get_data(user_id)
-        if user_data.get('current_state') != AppStates.WAITING_FOR_DEPARTMENT_SEARCH:
+        if (user_data.get('current_state') not in
+                [
+                    AppStates.WAITING_FOR_DEPARTMENT_MAVIS_SEARCH,
+                    AppStates.WAITING_FOR_DEPARTMENT_VOTONIA_SEARCH
+                ]):
             return
 
         # Убираем "часики" на кнопке
@@ -438,7 +478,12 @@ async def process_department_input(callback_query: types.CallbackQuery):
         await callback_query.message.edit_reply_markup(reply_markup=None)
 
         # Получаем данные сотрудников
-        employees = await fetch_table(table_id=Config.ATS_BOOK_ID, app="USER")
+        if user_data.get('current_state') == AppStates.WAITING_FOR_DEPARTMENT_VOTONIA_SEARCH:
+            table_id = Config.ATS_VOTONIA_BOOK_ID
+        else:
+            table_id = Config.ATS_MAVIS_BOOK_ID
+
+        employees = await fetch_table(table_id=table_id, app="USER")
 
         # Фильтруем по отделу
         searched_employees = await give_employee_data("Department", search_query, employees)

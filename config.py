@@ -13,6 +13,7 @@ class Config:
     MAIN_MENU_NEWCOMER_ID = os.getenv("MAIN_MENU_NEWCOMER_ID")
     BROADCAST_TABLE_ID = os.getenv("BROADCAST_TABLE_ID")
 
+    BUFFER_1C_TABLE_ID = os.getenv("BUFFER_1C_TABLE_ID")
     DATA_1C_TABLE_ID = os.getenv("DATA_1C_TABLE_ID")
     ATS_MAVIS_BOOK_ID = os.getenv("ATS_MAVIS_BOOK_ID")
     ATS_VOTONIA_BOOK_ID = os.getenv("ATS_VOTONIA_BOOK_ID")

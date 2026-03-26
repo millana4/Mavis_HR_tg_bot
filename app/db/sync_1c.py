@@ -22,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 # Время запуска синхронизации с выгрузкой 1С
-sync_times = [time(12, 00), time(16, 00)]
+sync_times = [time(8, 30), time(9, 00)]
 
 # Время проверки ролей
-roles_check_time = [time(14, 00)]
+roles_check_time = [time(9, 30)]
 
 
 #__________________________________________________

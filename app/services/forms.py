@@ -44,7 +44,7 @@ async def start_form_questions(table_data: List[Dict]) -> Dict:
 
     # Безопасное получение final_message (может быть None)
     final_row = next((row for row in table_data if row.get('Section') == 'Final_message'), {})
-    final_message = final_row.get('Content')
+    final_message = final_row.get('Content_text')
 
     return {
         "questions": questions,
@@ -124,17 +124,22 @@ async def save_form_answers(form_data: Dict) -> bool:
     logger.info("Начало сохранения ответов формы")
 
     try:
-        # Получаем данные пользователя
+        # Получаем данные пользователя по ID_messenger
         async with NocoDBClient() as client:
-            users = await client.get_all(table_id=Config.AUTH_TABLE_ID)
+            user_id = form_data.get('user_id')
+            where_filter = f"(ID_messenger,eq,{user_id})"
+            users = await client.get_all(
+                table_id=Config.AUTH_TABLE_ID,
+                where=where_filter,
+                limit=1
+            )
 
-            # Добавляем данные пользователя в form_data
-            for user in users:
-                current_id = str(user.get('ID_messenger'))
-                if current_id == str(form_data.get('user_id')):
-                    form_data['user_fio'] = user.get('FIO')
-                    form_data['user_phone'] = user.get('Phone')
-                    break
+            if users:
+                user = users[0]
+                form_data['user_fio'] = user.get('FIO')
+                form_data['user_phone'] = user.get('Phone')
+            else:
+                logger.warning(f"Пользователь с ID_messenger {user_id} не найден")
 
         # Подготавливаем данные для записи
         prepared_data = await prepare_data_to_post_in_db(form_data)

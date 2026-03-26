@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import pprint
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
@@ -252,14 +253,12 @@ async def finish_form(message: Message, form_data: Dict):
     # Уведомляем администратора, что пришло новое обращение
     await notify_feedback_admins(message.bot, message.from_user.id, form_data)
 
-    # Подготавливаем финальное сообщение
-    final_text = "Спасибо за обращение!"
-    parse_mode = None
-
-    if form_data.get('final_message'):
-        content = prepare_telegram_message(form_data['final_message'])
-        final_text = content.get('text', final_text)
-        parse_mode = content.get('parse_mode')
+    # Получаем финальное сообщение из данных формы
+    if form_data['final_message'] is not None:
+        final_text = form_data['final_message']
+    else:
+        final_text = "Спасибо за обращение!"
+    parse_mode = 'HTML'
 
     # Создаем клавиатуру для возврата
     user_state = await state_manager.get_data(user_id=user_id)

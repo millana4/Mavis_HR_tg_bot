@@ -31,7 +31,7 @@ async def fetch_table(table_id: str = "empty", app: str = "HR", limit: int = Non
         async with NocoDBClient() as client:
             return await client.get_all(
                 table_id=table_id,
-                limit=limit if limit else 100,
+                limit=limit if limit else 1000,
                 offset=offset if offset else 0
             )
     except Exception as e:

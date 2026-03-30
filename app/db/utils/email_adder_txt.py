@@ -11,6 +11,8 @@ from collections import defaultdict
 
 import aiohttp
 
+from app.db.nocodb_client import NocoDBClient
+
 try:
     from config import Config
     from app.db.table_data import fetch_table
@@ -220,10 +222,8 @@ class EmailImporter:
         """Получает данные из сводной таблицы и создает индексы."""
         logger.info("Получение данных из сводной таблицы...")
 
-        self.pivot_data = await fetch_table(
-            table_id=Config.SEATABLE_PIVOT_TABLE_ID,
-            app='USER'
-        )
+        async with NocoDBClient() as client:
+            self.pivot_data = await client.get_all(table_id=Config.PIVOT_TABLE_ID)
 
         if not self.pivot_data:
             logger.error("Не удалось получить данные из сводной таблицы")
@@ -234,7 +234,7 @@ class EmailImporter:
         # Создаем индексы
         for record in self.pivot_data:
             fio = record.get('FIO', '')
-            snils = record.get('Name', '')
+            snils = record.get('SNILS', '')
 
             if fio:
                 # Нормализуем ФИО
@@ -261,47 +261,26 @@ class EmailImporter:
         Возвращает (запись, метод_поиска, снилс).
         """
         name_part = email_record['name_part']
+        # Убираем кавычки в начале и конце строки
+        name_part = name_part.strip().strip("'").strip('"')
 
-        # Сначала пробуем найти по очищенному имени
-        components = self.extract_name_components(name_part)
-        cleaned_name = components['cleaned']
+        logger.debug(f"Поиск для: '{name_part}'")
 
-        if cleaned_name:
-            # Пробуем разные варианты поиска
+        # Нормализуем имя для поиска
+        normalized_name = self.normalize_name(name_part)
 
-            # 1. По очищенному ФИО
-            normalized_cleaned = self.normalize_name(cleaned_name)
-            if normalized_cleaned in self.pivot_index_fio:
-                matches = self.pivot_index_fio[normalized_cleaned]
-                if len(matches) == 1:
-                    record, snils = matches[0]
-                    return record, 'full_fio_cleaned', snils
-
-            # 2. По фамилия+имя из очищенного
-            if components['surname_firstname']:
-                normalized = self.normalize_name(components['surname_firstname'])
-                if normalized in self.pivot_index_surname_name:
-                    matches = self.pivot_index_surname_name[normalized]
-                    if len(matches) == 1:
-                        record, snils = matches[0]
-                        return record, 'surname_firstname', snils
-
-            # 3. По имя+фамилия из очищенного
-            if components['firstname_surname']:
-                normalized = self.normalize_name(components['firstname_surname'])
-                if normalized in self.pivot_index_name_surname:
-                    matches = self.pivot_index_name_surname[normalized]
-                    if len(matches) == 1:
-                        record, snils = matches[0]
-                        return record, 'firstname_surname', snils
-
-        # Если не нашли по очищенному, пробуем по сырому (но нормализованному)
-        normalized_raw = self.normalize_name(name_part)
-        if normalized_raw in self.pivot_index_fio:
-            matches = self.pivot_index_fio[normalized_raw]
+        # Ищем по полному ФИО
+        if normalized_name in self.pivot_index_fio:
+            matches = self.pivot_index_fio[normalized_name]
             if len(matches) == 1:
                 record, snils = matches[0]
-                return record, 'full_fio_raw', snils
+                return record, 'full_fio', snils
+            elif len(matches) > 1:
+                logger.debug(f"Найдено несколько совпадений по ФИО '{normalized_name}': {len(matches)}")
+
+        # Если не нашли, логируем доступные варианты для отладки
+        logger.debug(
+            f"Не найдено в индексах. Доступные ключи ФИО (первые 10): {list(self.pivot_index_fio.keys())[:10]}")
 
         return None, 'not_found', None
 
@@ -325,8 +304,9 @@ class EmailImporter:
                 logger.warning(f"Не найдено однозначное соответствие для: {email_record['name_part']}")
                 continue
 
-            row_id = pivot_record.get('_id')
+            row_id = pivot_record.get('Id')
             if not row_id:
+                logger.error(f"Нет Id для записи: {pivot_record.get('FIO', 'unknown')}")
                 continue
 
             fio = pivot_record.get('FIO', '')
@@ -365,41 +345,19 @@ class EmailImporter:
         success_count = 0
         error_count = 0
 
-        for row_id, data in updates.items():
-            try:
-                token_data = await get_base_token(app='USER')
-                if not token_data:
-                    logger.error("Не удалось получить токен SeaTable")
+        async with NocoDBClient() as client:
+            for row_id, data in updates.items():
+                try:
+                    await client.update_record(
+                        table_id=Config.PIVOT_TABLE_ID,
+                        record_id=int(row_id),
+                        data=data['updates']
+                    )
+                    logger.info(f"✓ Обновлено: {data['fio']} ({data['snils']})")
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"✗ Ошибка обновления {data['fio']}: {e}")
                     error_count += 1
-                    continue
-
-                url = f"{token_data['dtable_server'].rstrip('/')}/api/v1/dtables/{token_data['dtable_uuid']}/rows/"
-
-                headers = {
-                    "Authorization": f"Bearer {token_data['access_token']}",
-                    "Accept": "application/json",
-                    "Content-Type": "application/json"
-                }
-
-                payload = {
-                    "table_id": Config.SEATABLE_PIVOT_TABLE_ID,
-                    "row_id": row_id,
-                    "row": data['updates']
-                }
-
-                async with aiohttp.ClientSession() as session:
-                    async with session.put(url, headers=headers, json=payload) as response:
-                        if response.status == 200:
-                            logger.info(f"✓ Обновлено: {data['fio']} ({data['snils']})")
-                            success_count += 1
-                        else:
-                            error_text = await response.text()
-                            logger.error(f"✗ Ошибка обновления {data['fio']}: {response.status} - {error_text}")
-                            error_count += 1
-
-            except Exception as e:
-                logger.error(f"Ошибка при обновлении записи {row_id}: {e}")
-                error_count += 1
 
         return success_count, error_count
 

@@ -227,7 +227,6 @@ async def process_name_input(message: Message):
         logger.error(f"Name input processing error: {str(e)}", exc_info=True)
         await message.answer("Ошибка при обработке запроса")
 
-
 async def show_employee(searched_employees: List[Dict], message: Message):
     """
     Формирует сообщение с результатами поиска сотрудников и выводит его в чат.
@@ -262,11 +261,10 @@ async def show_employee(searched_employees: List[Dict], message: Message):
             inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="search_back")]]
         )
 
-        photo_url = emp.get("Photo")  # Получаем строку, а не список
+        photo_url = emp.get("Photo")
 
         if photo_url:
             try:
-                # Пробуем отправить с фото
                 sent_message = await message.answer_photo(
                     photo=photo_url,
                     caption=text,
@@ -274,7 +272,6 @@ async def show_employee(searched_employees: List[Dict], message: Message):
                     reply_markup=keyboard
                 )
             except Exception as e:
-                # Если фото не отправилось, логируем ошибку и отправляем без фото
                 logger.warning(f"Не удалось отправить фото для {emp.get('FIO')}: {e}")
                 sent_message = await message.answer(
                     text=text,
@@ -282,7 +279,6 @@ async def show_employee(searched_employees: List[Dict], message: Message):
                     reply_markup=keyboard
                 )
         else:
-            # Если фото нет, отправляем без фото
             sent_message = await message.answer(
                 text=text,
                 parse_mode="HTML",
@@ -291,10 +287,36 @@ async def show_employee(searched_employees: List[Dict], message: Message):
 
     else:
         # Несколько сотрудников — фото не показываем
-        for emp in searched_employees:
-            text_blocks.append(format_employee_text(emp))
+        full_text = ""
+        total_employees = len(searched_employees)
+        max_length = 3800
+        warning_added = False
+        displayed_count = 0
 
-        full_text = "\n\n".join(text_blocks)
+        for emp in searched_employees:
+            emp_text = format_employee_text(emp)
+
+            # Проверяем, поместится ли следующий сотрудник
+            if full_text:
+                candidate = full_text + "\n\n" + emp_text
+            else:
+                candidate = emp_text
+
+            if len(candidate) > max_length:
+                # Добавляем предупреждение и выходим
+                warning = "\n\n❗️Внимание! Выведены не все результаты, так как список слишком большой. Уточните ваш запрос, чтобы сократить вывод."
+                full_text += warning
+                warning_added = True
+                break
+            else:
+                if full_text:
+                    full_text += "\n\n" + emp_text
+                else:
+                    full_text = emp_text
+                displayed_count += 1
+
+        if not warning_added and displayed_count < total_employees:
+            full_text += f"\n\n... и еще {total_employees - displayed_count} сотрудников."
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="search_back")]]

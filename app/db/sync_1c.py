@@ -21,160 +21,17 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
-# Время запуска синхронизации с выгрузкой 1С
-sync_times = [time(8, 30), time(9, 00)]
+# Добавить создание пуль-опросов для новых пользователей а тоя его удалила
+
+# Время синхронизации сводной таблицы с авторизационной
+sync_auth_times = [time(8, 15), time(8, 30)]
 
 # Время проверки ролей
-roles_check_time = [time(9, 30)]
+roles_check_time = [time(9, 00)]
 
 
 #__________________________________________________
 #          ПОДГОТОВКА К СИНХРОНИЗАЦИИ
-
-async def get_all_1c_users() -> List[Dict]:
-    """
-    Получает всех пользователей из 1С из таблицы DATA_1C_TABLE_ID.
-    Использует пагинацию NocoDB (limit/offset).
-    """
-    logger.info("Получение данных из 1С")
-
-    # Используем limit=1000 (максимальный размер страницы в NocoDB)
-    first_batch = await fetch_table(table_id=Config.DATA_1C_TABLE_ID, app='USER', limit=1000, offset=0)
-
-    if not first_batch:
-        return []
-
-    # Второй запрос - остальные записи (offset=1000)
-    second_batch = await fetch_table(table_id=Config.DATA_1C_TABLE_ID, app='USER', offset=1000)
-
-    if second_batch:
-        result = first_batch + second_batch
-        logger.info(f"Всего получено {len(result)} записей")
-        return result
-
-    return first_batch
-
-def aggregate_1c_users(users_data: List[Dict]) -> Dict[str, User]:
-    logger.info(f"Агрегация {len(users_data)} записей из 1С")
-    users_by_snils = defaultdict(list)
-
-    for i, row in enumerate(users_data):
-        snils = row.get('SNILS')
-        if snils:
-            users_by_snils[snils].append(row)
-        else:
-            logger.warning(f"Строка {i} не содержит SNILS: {row.get('FIO', 'нет ФИО')}")
-
-    logger.info(f"Сгруппировано по СНИЛС: {len(users_by_snils)} уникальных пользователей")
-
-    aggregated_users = {}
-
-    for snils, rows in users_by_snils.items():
-        if not rows:
-            continue
-
-        logger.debug(f"Агрегация пользователя {snils}, строк: {len(rows)}")
-
-        # создаём пользователя из первой строки
-        user = User.from_1c_data(rows[0])
-        if not user:
-            logger.error(f"Не удалось создать User из первой строки для {snils}")
-            continue
-
-        all_phones = set(user.phones)
-        previous_surnames = set()
-        earliest_date = user.date_employment
-        employment_strings = set()
-        employments: list[Employment] = []
-
-        for row in rows:
-            # предыдущие фамилии
-            prev_surname = row.get('Previous_surname')
-            if prev_surname:
-                previous_surnames.add(prev_surname)
-
-            # дата трудоустройства
-            row_date = None
-            date_str = row.get('Date_employment')
-            if date_str:
-                try:
-                    row_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                    if not earliest_date or (row_date and row_date < earliest_date):
-                        earliest_date = row_date
-                except:
-                    pass
-
-            # телефоны
-            phone_private = row.get('Phone_private', '')
-            if phone_private:
-                phones_from_row = normalize_phones_string(phone_private)
-                all_phones.update(phones_from_row)
-            else:
-                phones_from_row = []
-
-            # создаем трудоустройство
-            company_name = row.get('Company', '')
-            company_name = company_name.strip() if company_name else ''
-
-            dept_name = row.get('Department', '')
-            dept_name = dept_name.strip() if dept_name else ''
-
-            pos_name = row.get('Position', '')
-            pos_name = pos_name.strip() if pos_name else ''
-
-            company = None
-            if company_name:
-                company = Company(
-                    id=company_name.lower().replace(' ', '_'),
-                    title=company_name,
-                    segment=CompanySegment.BOTH
-                )
-
-            department = None
-            if dept_name:
-                department = Department(
-                    id=dept_name.lower().replace(' ', '_'),
-                    title=dept_name
-                )
-
-            employment = Employment(
-                company=company,
-                department=department,
-                position=pos_name or None,
-                date_employment=row_date,
-                is_main=row.get('Is_main') == 'Да'
-            )
-
-            employments.append(employment)
-
-            # строки для сравнения (одна на каждое сочетание)
-            fio = row.get('FIO', '')
-            fio = fio.strip() if fio else ''
-
-            prev_surname_val = row.get('Previous_surname', '')
-            prev_surname_val = prev_surname_val.strip() if prev_surname_val else ''
-
-            for phone in phones_from_row or ['']:
-                emp_str = (
-                    f"{company_name}|{dept_name}|{pos_name}|"
-                    f"{fio}|"
-                    f"{prev_surname_val}|{phone}"
-                )
-                employment_strings.add(emp_str)
-
-            # финальная сборка пользователя
-        user.employments = employments
-        user.employment_strings = employment_strings
-        user.previous_surname = list(previous_surnames) if previous_surnames else None
-        user.date_employment = earliest_date
-        user.phones = list(all_phones)
-
-        aggregated_users[snils] = user
-        logger.debug(f"Успешно агрегирован пользователь: {user.fio}")
-
-    logger.info(f"Агрегация завершена, создано {len(aggregated_users)} пользователей")
-    return aggregated_users
-
 
 async def get_pivot_table_users() -> Dict[str, Dict]:
     """
@@ -194,172 +51,10 @@ async def get_pivot_table_users() -> Dict[str, Dict]:
         return {}
 
 
-def pivot_data_changed(existing: Dict, new: Dict) -> bool:
-    # 1. Простые поля — строгое сравнение
-    if (existing.get('FIO') or '') != (new.get('FIO') or ''):
-        return True
-
-    if surname_to_str(existing.get('Previous_surname')) != surname_to_str(new.get('Previous_surname')):
-        return True
-
-    # 2. Поля-множества
-    set_fields = ('Companies', 'Departments', 'Positions')
-
-    for field in set_fields:
-        old_set = values_to_set(existing.get(field))
-        new_set = values_to_set(new.get(field))
-        if old_set != new_set:
-            pprint.pprint(f'{field}: {old_set}: {new}')
-            return True
-
-    # 3. Телефоны
-    old_phones = phones_to_set(existing.get('Phones'))
-    new_phones = phones_to_set(new.get('Phones'))
-
-    if old_phones != new_phones:
-        return True
-
-    return False
-
-
-
 # __________________________________________________________
 #            СИНХРОНИЗАЦИЯ С ВЫГРУЗКОЙ 1С
 
-async def process_1c_sync():
-    """
-    Основная функция синхронизации c 1С
-    """
-    logger.info("Начало синхронизации c 1С")
-    try:
-        all_1c_data = await get_all_1c_users()
-        if not all_1c_data:
-            logger.warning("Нет данных из 1С")
-            return
-
-        users_from_1c = aggregate_1c_users(all_1c_data)
-        users_in_pivot = await get_pivot_table_users()
-
-        # Вызов синхронизации со сводной таблицей
-        await sync_pivot(users_from_1c, users_in_pivot)
-
-        # Добавляем паузу секунды перед следующей синхронизацией, так как в авторизации используется сводная таблица
-        await asyncio.sleep(5)
-
-        # Повторно получаю актуальные данные
-        updated_users_in_pivot = await get_pivot_table_users()
-
-        # Синхронизация авторизационной таблицы
-        await sync_auth(updated_users_in_pivot)
-
-        logger.info("Синхронизация 1С завершена")
-
-    except Exception as e:
-        logger.error(f"Ошибка синхронизации 1С: {e}")
-
-
-async def sync_pivot(users_from_1c: Dict[str, User], users_in_pivot: Dict[str, Dict]):
-    """Синхронизация пользователей со сводной таблицей по ключевым данным"""
-
-    logger.info("Начало синхронизация пользователей со сводной таблицей")
-    logger.info(f"Получено из 1С: {len(users_from_1c)} пользователей")
-    logger.info(f"В сводной таблице: {len(users_in_pivot)} пользователей")
-
-    created_count = 0
-    updated_count = 0
-    unchanged_count = 0
-    archived_count = 0
-    error_count = 0
-
-    # Обработка пользователей из 1С
-    for snils, user in users_from_1c.items():
-        try:
-            logger.debug(f"Обработка пользователя: СНИЛС={snils}, ФИО={user.fio}")
-
-            new_data = user.to_pivot_table_format()
-            date_was_added_now = False
-
-            if snils in users_in_pivot:
-                existing_data = users_in_pivot[snils]
-                logger.debug(f"Пользователь существует в сводной таблице")
-
-                # Сохраняем существующую дату устройства
-                existing_date = existing_data.get('Date_employment')
-                if existing_date:
-                    new_data['Date_employment'] = existing_date
-                else:
-                    # Даты не было — берем из 1С
-                    if user.date_employment:
-                        new_data['Date_employment'] = user.date_employment.strftime('%Y-%m-%d')
-                        date_was_added_now = True
-                    else:
-                        new_data['Date_employment'] = None
-
-                # Проверка изменений только по ключевому сету
-                if pivot_data_changed(existing_data, new_data) or date_was_added_now:
-                    logger.info(f"Обновление данных пользователя: {user.fio} (СНИЛС: {snils})")
-                    new_data['Is_archived'] = False
-                    success = await update_pivot(existing_data['Id'], new_data)
-                    if success:
-                        updated_count += 1
-                        logger.info(f"Обновлён: {user.fio}")
-
-                        # Если дата добавилась и она меньше года — создаём пульс-опросы
-                        if date_was_added_now:
-                            one_year_ago = datetime.now().date() - relativedelta(years=1)
-                            if user.date_employment and user.date_employment >= one_year_ago:
-                                logger.info(f"Дата устройства добавлена, создаём пульс-опросы для {user.fio}")
-                                await create_pulse(user)
-                else:
-                    logger.info(f"Без изменений: {user.fio}")
-                    unchanged_count += 1
-
-            else:
-                # Новый пользователь
-                logger.info(f"Новый пользователь: {user.fio} (СНИЛС: {snils})")
-                success = await create_pivot(new_data)
-                if success:
-                    created_count += 1
-
-                    # Пульс-опросы для новых сотрудников с датой меньше года работы
-                    if user.date_employment:
-                        one_year_ago = datetime.now().date() - relativedelta(years=1)
-                        if user.date_employment >= one_year_ago:
-                            logger.info(f"Создаём пульс-опросы для нового сотрудника {user.fio}")
-                            await create_pulse(user)
-                    else:
-                        logger.debug(f"У пользователя {user.fio} нет даты устройства, пульс-опросы не создаются")
-
-        except Exception as e:
-            logger.error(f"Ошибка обработки пользователя {user.fio} (СНИЛС: {snils}): {e}", exc_info=True)
-            error_count += 1
-
-    # Архивирование пользователей, которых больше нет в 1С
-    users_to_archive = {
-        snils for snils in users_in_pivot.keys()
-        if snils not in users_from_1c
-           and not users_in_pivot[snils].get('Is_archived', False)
-    }
-
-    for snils in users_to_archive:
-        try:
-            user_data = users_in_pivot[snils]
-            fio = user_data.get('FIO', 'нет ФИО')
-
-            success = await archive_pivot(user_data['Id'], user_data)
-            if success:
-                archived_count += 1
-                logger.info(f"Архивирован: {fio} (СНИЛС: {snils})")
-        except Exception as e:
-            logger.error(f"Ошибка архивации пользователя {snils}: {e}", exc_info=True)
-            error_count += 1
-
-    logger.info("Синхронизация сводной таблицы завершена")
-    logger.info(f"ИТОГО: создано={created_count}, обновлено={updated_count}, без изменений={unchanged_count}, "
-                f"архивировано={archived_count}, ошибок={error_count}")
-
-
-async def sync_auth(pivot_users):
+async def sync_auth():
     """
     Синхронизация таблицы авторизации на основе данных из сводной таблицы.
     Только активные пользователи (не архивные).
@@ -367,6 +62,7 @@ async def sync_auth(pivot_users):
     logger.info("Начало синхронизации таблицы авторизации")
 
     try:
+        pivot_users = await get_pivot_table_users()
         logger.info(f"Получено {len(pivot_users)} пользователей из сводной таблицы")
 
         # Фильтруем активных и архивных пользователей отдельно
@@ -517,6 +213,7 @@ async def create_pulse(user: User):
     """
     Создает пульс-опросы для нового сотрудника, если дата устройства меньше года назад.
     """
+    # Вот тут надо дописать, для каких сотрудников создавать - для вчерашникх, а лучше за всю неделю, у тех у кого нет
     # Берем дату устройства из User
     if not user.date_employment:
         logger.info(f"Нет даты устройства для {user.fio}, пульс-опросы не созданы")
@@ -558,9 +255,9 @@ async def start_sync_scheduler():
 
     await asyncio.gather(
         run_daily_task(
-            name="Синхронизация с 1С",
-            times=sync_times,
-            task=process_1c_sync,
+            name="Синхронизация авторизационной таблицы",
+            times=sync_auth_times,
+            task=sync_auth,
         ),
         run_daily_task(
             name="Проверка ролей",
@@ -603,14 +300,3 @@ async def run_daily_task(
             logger.exception(f"Ошибка в задаче {name}")
 
         await asyncio.sleep(5)  # защита от повторного запуска
-
-
-async def wait_until_msk(target_time: time):
-    now_utc = datetime.utcnow()
-    now_msk = now_utc + timedelta(hours=3)
-
-    next_run = datetime.combine(now_msk.date(), target_time)
-    if next_run <= now_msk:
-        next_run += timedelta(days=1)
-
-    await asyncio.sleep((next_run - now_msk).total_seconds())

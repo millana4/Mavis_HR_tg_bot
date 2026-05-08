@@ -9,92 +9,10 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 
-# Методы для сводной таблицы
-async def create_pivot(user_data: Dict) -> bool:
-    """
-    Создает пользователя в сводной таблице NocoDB
-    """
-    try:
-        async with NocoDBClient() as client:
-            result = await client.create_record(table_id=Config.PIVOT_TABLE_ID, data=user_data)
-
-            if result:
-                logger.info(f"Пользователь создан в сводной таблице: {user_data.get('FIO')}")
-                return True
-            else:
-                logger.error(f"Ошибка создания пользователя в сводной таблице: {user_data.get('FIO')}")
-                return False
-
-    except Exception as e:
-        logger.error(f"Ошибка при создании пользователя в сводной таблице: {str(e)}")
-        return False
-
-
-async def update_pivot(record_id: str, user_data: Dict) -> bool:
-    """
-    Обновляет пользователя в сводной таблице NocoDB
-    """
-    try:
-        async with NocoDBClient() as client:
-            await client.update_record(
-                table_id=Config.PIVOT_TABLE_ID,
-                record_id=record_id,
-                data=user_data
-            )
-
-            logger.info(f"Пользователь обновлен в сводной таблице: {user_data.get('FIO')}")
-            return True
-
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении пользователя в сводной таблице: {str(e)}")
-        return False
-
-
-async def archive_pivot(record_id: str, user_data: Dict) -> bool:
-    """
-    Архивирует пользователя в сводной таблице NocoDB (оставляет только СНИЛС и дату устройства).
-    Дата устройства должна оставаться на случай, если сотрудник переоформится в другую компанию,
-    чтобы ему потом не создавались пульс-опросы как новому сотруднику от новой даты.
-    """
-    try:
-        # Сохраняем только СНИЛС и дату устройства
-        archived_data = {
-            'Name': user_data.get('Name'),  # СНИЛС
-            'Date_employment': user_data.get('Date_employment'),  # Дата устройства
-            'FIO': None,
-            'Previous_surname': None,
-            'Company_segment': None,
-            'Companies': None,
-            'Departments': None,
-            'Positions': None,
-            'Internal_numbers': None,
-            'Email_mavis': None,
-            'Email_other': None,
-            'Email_votonia': None,
-            'Phones': None,
-            'Location': None,
-            'Photo': None,
-            'Is_archived': True  # Флаг архивации
-        }
-
-        async with NocoDBClient() as client:
-            await client.update_record(
-                table_id=Config.PIVOT_TABLE_ID,
-                record_id=record_id,
-                data=archived_data
-            )
-
-            logger.info(f"Пользователь архивирован в сводной таблице (СНИЛС: {user_data.get('Name')})")
-            return True
-
-    except Exception as e:
-        logger.error(f"Ошибка при архивации пользователя: {str(e)}")
-        return False
-
 
 # Методы для авторизационной таблицы
 
-async def get_auth() -> Dict[str, List[Dict]]:
+async def read_auth() -> Dict[str, List[Dict]]:
     """
     Получает всех пользователей из таблицы авторизации NocoDB
     Возвращает словарь {snils: [записи_по_телефонам]}

@@ -8,26 +8,18 @@ from typing import List, Dict, Iterable, Callable, Awaitable
 
 from dateutil.relativedelta import relativedelta
 
-from app.db.organization import Company, Department, CompanySegment
-from app.db.roles import check_user_roles_daily, UserRole
-from app.db.sync_db_executor import create_pivot, update_pivot, archive_pivot, get_auth, create_auth, update_auth, \
-    delete_auth
-from app.db.users import User, Employment
+from app.db.auth_table_crud import read_auth, create_auth, update_auth, delete_auth
+from app.db.roles import check_user_roles_daily, UserRole, roles_check_time
 from app.db.table_data import fetch_table
 from app.services.pulse_creator import PulseTaskCreator
-from app.services.utils import normalize_phones_string, values_to_set, phones_to_set, surname_to_str
+from app.services.utils import normalize_phones_string
 from config import Config
 
 logger = logging.getLogger(__name__)
 
 
-# Добавить создание пуль-опросов для новых пользователей а тоя его удалила
-
-# Время синхронизации сводной таблицы с авторизационной
+# Время обновления авторизационной таблицы по данным сводной
 sync_auth_times = [time(8, 15), time(8, 30)]
-
-# Время проверки ролей
-roles_check_time = [time(9, 00)]
 
 
 #__________________________________________________
@@ -52,7 +44,7 @@ async def get_pivot_table_users() -> Dict[str, Dict]:
 
 
 # __________________________________________________________
-#            СИНХРОНИЗАЦИЯ С ВЫГРУЗКОЙ 1С
+#            СИНХРОНИЗАЦИЯ АВТОРИЗАЦИОННЫХ ДАННЫХ
 
 async def sync_auth():
     """
@@ -70,7 +62,7 @@ async def sync_auth():
         archived_pivot_users = {}
 
         for snils, user_data in pivot_users.items():
-            # Если ключа 'Is_archived' нет вообще - значит пользователь активный
+            # Если ключа 'Is_archived' нет - значит пользователь активный
             if 'Is_archived' not in user_data:
                 active_pivot_users[snils] = user_data
             # Если ключ есть и он True - пользователь архивный
@@ -85,7 +77,7 @@ async def sync_auth():
 
 
         # Получаем текущих пользователей из авторизационной таблицы
-        auth_users = await get_auth()
+        auth_users = await read_auth()
         logger.info(f"В авторизационной таблице найдено {len(auth_users)} пользователей")
 
         created_count = 0
@@ -95,6 +87,7 @@ async def sync_auth():
         # Обрабатываем каждого активного пользователя
         for snils, pivot_user in active_pivot_users.items():
             try:
+                # Сначала в авторизационной таблице обновляю все данные
                 # Дата устройства
                 date_employment_str = pivot_user.get('Date_employment')
                 date_employment = None
@@ -182,12 +175,25 @@ async def sync_auth():
                             if success:
                                 created_count += 1
 
+                # Для новых сотрудников запускаю создание пульс-опросов
+                if date_employment:
+                    seven_days_ago = datetime.now().date() - relativedelta(days=7)
+                    if date_employment > seven_days_ago:
+                        logger.info(f"Работает меньше недели - создаём пульс-опросы для {pivot_user.get('FIO')}")
+                        creator = PulseTaskCreator()
+                        created = await creator.create_tasks(pivot_user)
+                        if created:
+                            logger.info(f"Созданы пульс-опросы для {pivot_user.get('FIO')}")
+                        else:
+                            logger.info(f"Пульс-опросы не требуются для {pivot_user.get('FIO')}")
+
+
             except Exception as e:
                 logger.error(f"Ошибка обработки пользователя {snils} ({pivot_user.get('FIO', 'нет ФИО')}): {e}",
                              exc_info=True)
 
         # Удаляем записи архивных пользователей
-        auth_users_updated = await get_auth()
+        auth_users_updated = await read_auth()
         deleted_count = 0
 
         for snils, pivot_user in archived_pivot_users.items():
@@ -208,44 +214,6 @@ async def sync_auth():
     except Exception as e:
         logger.error(f"Критическая ошибка синхронизации таблицы авторизации: {e}")
 
-
-async def create_pulse(user: User):
-    """
-    Создает пульс-опросы для нового сотрудника, если дата устройства меньше года назад.
-    """
-    # Вот тут надо дописать, для каких сотрудников создавать - для вчерашникх, а лучше за всю неделю, у тех у кого нет
-    # Берем дату устройства из User
-    if not user.date_employment:
-        logger.info(f"Нет даты устройства для {user.fio}, пульс-опросы не созданы")
-        return
-
-    one_year_ago = datetime.now().date() - relativedelta(years=1)
-    if user.date_employment <= one_year_ago:
-        logger.info(f"{user.fio} старше года в компании, пульс-опросы не создаем")
-        return
-
-    user_dict = {
-        'SNILS': user.id,
-        'FIO': user.fio,
-        'Department': (
-            user.employments[0].department.title
-            if user.employments and user.employments[0].department
-            else None
-        ),
-        'Date_employment': user.date_employment.isoformat(),
-    }
-
-    try:
-        creator = PulseTaskCreator()
-        created = await creator.create_tasks(user_dict)
-
-        if created:
-            logger.info(f"Созданы пульс-опросы для {user.fio}")
-        else:
-            logger.info(f"Пульс-опросы не требуются для {user.fio}")
-
-    except Exception as e:
-        logger.error(f"Ошибка создания пульс-опросов для {user.fio}: {e}")
 
 # _________________________________________________
 #              ЗАПУСКИ СИНХРОНИЗАЦИЙ

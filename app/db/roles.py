@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, time
 from enum import Enum
 from typing import List, Optional, Dict
 from dateutil.relativedelta import relativedelta
@@ -7,9 +7,12 @@ from dateutil.relativedelta import relativedelta
 from config import Config
 from app.db.table_data import fetch_table
 from app.db.nocodb_client import NocoDBClient
-from app.db.sync_db_executor import update_auth
+from app.db.auth_table_crud import update_auth
 
 logger = logging.getLogger(__name__)
+
+# Время проверки ролей
+roles_check_time = [time(9, 00)]
 
 
 class UserRole(str, Enum):
@@ -116,7 +119,6 @@ class RoleChecker:
                         update_data = {
                             'Role': 'employee'
                         }
-
                         success = await update_auth(user.get('Id'), update_data)
                         updated_count += 1
                         if success:

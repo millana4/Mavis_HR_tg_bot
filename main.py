@@ -6,7 +6,6 @@ from app.db.sync_1c import start_sync_scheduler
 from app.services.fsm import state_manager
 from config import Config
 from app.services.pulse_sender import start_pulse_sender_scheduler
-from app.db.buffer_process import run_daily_buffer_sync
 
 
 from telegram import custom_logging
@@ -25,11 +24,10 @@ async def main():
     bot = Bot(token=Config.BOT_TOKEN)
     dp = Dispatcher()
 
-    # Планировщик синхронизации бота с данными пользователей из 1С + рассылки пульс-опросов
+    # Планировщик синхронизации таблицы авторизации + рассылки пульс-опросов
     scheduler_tasks = [
         asyncio.create_task(start_sync_scheduler()),
-        asyncio.create_task(start_pulse_sender_scheduler(bot)),
-        asyncio.create_task(run_daily_buffer_sync())
+        asyncio.create_task(start_pulse_sender_scheduler(bot))
     ]
 
     # Регистрация роутеров

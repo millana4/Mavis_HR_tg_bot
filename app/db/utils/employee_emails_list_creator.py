@@ -48,5 +48,5 @@ async def generate_email_list():
         return emails
 
 
-if __name__ == "__main__":
-    asyncio.run(generate_email_list())
+# if __name__ == "__main__":
+#    asyncio.run(generate_email_list())

@@ -1,10 +1,10 @@
+import asyncio
 import logging
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from config import Config
 from app.db.nocodb_client import NocoDBClient
-from app.db.users import User
 
 
 logger = logging.getLogger(__name__)
@@ -277,33 +277,5 @@ class PulseTaskCreator:
         return False
 
 
-    async def _create_pulse_for_user(user: User) -> bool:
-        """
-        Создает пульс-опросы для пользователя
-        """
-        # Конвертируем User в dict для передачи
-        user_dict = {
-            'FIO': user.fio,
-            'SNILS': user.snils,
-            'Department': user.department,
-            'Position': user.position,
-            'Data_employment': user.employment_date.isoformat() if user.employment_date else None
-        }
-
-        try:
-            return await create_pulse_all_tasks(user_dict)
-        except Exception as e:
-            logger.error(f"Ошибка создания пульс-опросов для {user.fio}: {e}")
-            return False
-
-
 # Глобальный экземпляр
 pulse_task_creator = PulseTaskCreator()
-
-
-async def create_pulse_all_tasks(user_data: Dict) -> bool:
-    """
-    Основная функция для создания пульс-опросов
-    """
-    logger.info(f"Создание пульс-опросов для {user_data.get('FIO')}")
-    return await pulse_task_creator.create_tasks(user_data)

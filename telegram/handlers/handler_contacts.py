@@ -20,7 +20,7 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 # Таймер, чтобы удалить на клиенте из истории имена сотрудников
-AUTODELETE_TIMER = 3600
+AUTODELETE_TIMER = 120
 
 # Изображения для справочника
 BANNER_CONTACTS = ""

@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 
 from app.db.nocodb_client import NocoDBClient
+from app.services.utils import normalize_phone
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,30 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
             users = await client.get_all(table_id=Config.AUTH_TABLE_ID, where=phone_filter, limit=1)
 
             if not users:
-                logger.error(f"Совпадений не найдено. Проверьте в авторизационной таблице {id_messenger}")
+                # Если нет совпадений - проверяем нормализованы ли телефоны, их могли вносить вручную
+                all_users = await client.get_all(table_id=Config.AUTH_TABLE_ID)
+                normalized_count = 0
+
+                for record in all_users:
+                    original_phone = record.get('Phone')
+                    if original_phone:
+                        normalized = normalize_phone(original_phone)
+                        if normalized and normalized != original_phone:
+                            await client.update_record(
+                                table_id=Config.AUTH_TABLE_ID,
+                                record_id=record['Id'],
+                                data={'Phone': normalized}
+                            )
+                            normalized_count += 1
+                            logger.info(f"Нормализован телефон: {original_phone} -> {normalized}")
+
+                if normalized_count > 0:
+                    logger.info(f"Нормализовано {normalized_count} телефонов, повторяем поиск")
+                    # Повторяем поиск с нормализованным телефоном
+                    users = await client.get_all(table_id=Config.AUTH_TABLE_ID, where=phone_filter, limit=1)
+
+            if not users:
+                logger.error(f"Совпадений не найдено для телефона {phone}")
                 return False
 
             user = users[0]  # берем первого пользователя из списка, он там один

@@ -85,7 +85,7 @@ class PulseSender:
             async with NocoDBClient() as client:
                 tasks = await client.get_all(table_id=Config.PULSE_TASKS_ID)
 
-            logger.info(f'Найденные задачи в таблице {tasks}')
+            logger.info(f'Найденны задачи на опросы в таблице.')
 
             if not tasks:
                 logger.info("Нет задач в таблице пульс-опросов")

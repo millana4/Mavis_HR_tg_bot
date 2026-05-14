@@ -1,9 +1,9 @@
 import pprint
 import re
 import logging
-from typing import List, Dict
+from typing import List, Dict, Any
+from collections import defaultdict
 
-from config import Config
 from app.db.nocodb_client import NocoDBClient
 
 
@@ -247,8 +247,64 @@ async def give_employee_data(search_type: str, search_query: str, employees: Lis
     logger.info(f"По запросу '{search_query}' (сегмент: {selected_segment}) найдено {len(results)} сотрудник(ов)")
     return results
 
+async def format_ats_internal(searched_employees_raw: List[Dict]) -> List[Dict]:
+    """
+        Группирует записи АТС по ФИО, объединяет только те записи, у которых
+        Prefix и Number_direct одинаковые (или оба null).
+        """
+    logger.info(f"Группировка записей из спраочника АТС по ФИО")
 
-def format_employee_text(emp: Dict) -> str:
+    # Сначала группируем по ФИО
+    by_fio = defaultdict(list)
+    for record in searched_employees_raw:
+        fio = record.get("FIO")
+        if not fio:
+            continue
+        by_fio[fio].append(record)
+
+    result = []
+
+    for fio, records in by_fio.items():
+        # Дальше группируем внутри одного ФИО по Prefix и Number_direct
+        sub_groups = defaultdict(lambda: {
+            "Internal_numbers": set(),
+            "Department": set(),
+            "Position": set()
+        })
+
+        for record in records:
+            prefix = record.get("Prefix")
+            number_direct = record.get("Number_direct")
+            key = (prefix, number_direct)
+
+            internal = record.get("Internal_number")
+            if internal:
+                sub_groups[key]["Internal_numbers"].add(str(internal))
+
+            dept = record.get("Department")
+            if dept:
+                sub_groups[key]["Department"].add(dept)
+
+            pos = record.get("Position")
+            if pos:
+                sub_groups[key]["Position"].add(pos)
+
+
+        # Формируем результат для каждого под-ключа
+        for (prefix, number_direct), data in sub_groups.items():
+            item = {
+                "FIO": fio,
+                "Prefix": prefix,
+                "Number_direct": number_direct,
+                "Internal_number": ", ".join(sorted(data["Internal_numbers"])) if data["Internal_numbers"] else None,
+                "Department": ", ".join(sorted(data["Department"])) if data["Department"] else None,
+                "Position": ", ".join(sorted(data["Position"])) if data["Position"] else None
+            }
+            result.append(item)
+    return result
+
+
+async def format_employee_text(emp: Dict) -> str:
     """
     Форматирует данные одного сотрудника в текст.
     """
@@ -256,9 +312,6 @@ def format_employee_text(emp: Dict) -> str:
 
     if emp.get("FIO"):
         parts.append(f"<b>{emp['FIO']}</b>")
-
-    if emp.get("Raw_owner"):          # Если выводим из АТС
-        parts.append(f"<b>{emp['Raw_owner']}</b>")
 
     emails = []
     if emp.get("Email_mavis"):
@@ -277,6 +330,9 @@ def format_employee_text(emp: Dict) -> str:
             parts.append(f"Префикс: {emp['Prefix']}")
         if emp.get("Number_direct"):
             parts.append(f"Городской номер: {emp['Number_direct']}")
+
+    if emp.get("Mobile_public"):
+        parts.append(f"Мобильный телефон: {emp['Mobile_public']}")
 
     if emp.get("Location"):
         parts.append(f"Рабочее место: {emp['Location']}")

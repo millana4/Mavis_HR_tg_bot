@@ -17,8 +17,8 @@ Telegram-бот для HR-отдела компании МАВИС. Предос
 - Асинхронные запросы (aiohttp)
 
 ## Запуск
-1. Клонируйте репозиторий
-2. Настройте виртуальное окружение
-3. Установите зависимости: pip install -r requirements.txt
-4. Настройте переменные окружения. Скопируйте файл .env.example в .env и установите свои значения
-5. Запустить бота python main.py
+Команды по запуску в докере:
+ ```
+ docker build -t  mavis_hr_tg_bot .
+docker run -d -v .:/app  --name mavis_hr_tg_bot mavis_hr_tg_bot
+ ```

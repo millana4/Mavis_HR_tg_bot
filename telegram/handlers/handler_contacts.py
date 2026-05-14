@@ -9,7 +9,7 @@ from app.db.table_data import fetch_table
 from config import Config
 from app.services.fsm import state_manager, AppStates
 from app.db.contacts import give_employee_data, format_employee_text, give_unit_data, format_unit_text, \
-    get_department_list
+    get_department_list, format_ats_internal
 
 from telegram.handlers.filters import NameSearchFilter, SearchTypeFilter, ShopSearchFilter, DrugstoreSearchFilter
 from telegram.keyboards import SEARCH_TYPE_KEYBOARD, SEARCH_COMPANY_GROUP, BACK_TO_SEARCH_TYPE, \
@@ -227,7 +227,7 @@ async def process_name_input(message: Message):
         logger.error(f"Name input processing error: {str(e)}", exc_info=True)
         await message.answer("Ошибка при обработке запроса")
 
-async def show_employee(searched_employees: List[Dict], message: Message):
+async def show_employee(searched_employees_raw: List[Dict], message: Message, current_state: str = None):
     """
     Формирует сообщение с результатами поиска сотрудников и выводит его в чат.
     """
@@ -242,7 +242,7 @@ async def show_employee(searched_employees: List[Dict], message: Message):
         return
 
     # Если ничего не нашли
-    if not searched_employees:
+    if not searched_employees_raw:
         sent_message = await message.answer(
             "К сожалению, ничего не нашли. Попробуйте другой запрос или выберите другой способ поиска:",
             reply_markup=SEARCH_TYPE_KEYBOARD
@@ -250,12 +250,21 @@ async def show_employee(searched_employees: List[Dict], message: Message):
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_SEARCH_TYPE)
         return
 
+    # Если данные для телефонного справочника, то нужно сгруппировать телефоны по ФИО
+    if current_state in (
+            AppStates.WAITING_FOR_DEPARTMENT_VOTONIA_SEARCH,
+            AppStates.WAITING_FOR_DEPARTMENT_MAVIS_SEARCH
+    ):
+        searched_employees = await format_ats_internal(searched_employees_raw)
+    else:
+        searched_employees = searched_employees_raw
+
     text_blocks = []
 
     # Если один результат
     if len(searched_employees) == 1:
         emp = searched_employees[0]
-        text = format_employee_text(emp)
+        text = await format_employee_text(emp)
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="search_back")]]
@@ -294,7 +303,7 @@ async def show_employee(searched_employees: List[Dict], message: Message):
         displayed_count = 0
 
         for emp in searched_employees:
-            emp_text = format_employee_text(emp)
+            emp_text = await format_employee_text(emp)
 
             # Проверяем, поместится ли следующий сотрудник
             if full_text:
@@ -511,7 +520,7 @@ async def process_department_input(callback_query: types.CallbackQuery):
         searched_employees = await give_employee_data("Department", search_query, employees)
 
         # Показываем результат поиска
-        await show_employee(searched_employees, callback_query.message)
+        await show_employee(searched_employees, callback_query.message, current_state=user_data.get('current_state'))
 
     except Exception as e:
         logger.error(f"Department input processing error: {str(e)}", exc_info=True)

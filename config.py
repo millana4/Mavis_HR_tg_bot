@@ -5,6 +5,7 @@ load_dotenv()
 
 class Config:
     BOT_TOKEN = os.getenv("BOT_TOKEN")
+    BOT_PROXY = os.getenv("BOT_PROXY")
 
     NOCOBD_SERVER = os.getenv("NOCOBD_SERVER")
     NOCOBD_API_TOKEN = os.getenv("NOCOBD_API_TOKEN")
@@ -25,5 +26,7 @@ class Config:
 
     PULSE_TASKS_ID = os.getenv("PULSE_TASKS_ID")
     PULSE_CONTENT_ID = os.getenv("PULSE_CONTENT_ID")
+
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 

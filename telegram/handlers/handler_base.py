@@ -7,7 +7,7 @@ from aiogram.types import ReplyKeyboardRemove
 from app.db.nocodb_client import NocoDBClient
 from app.db.roles import RoleChecker
 from app.services.cache import clear_user_auth, get_user_access_and_role
-from app.services.utils import normalize_phone, contains_restricted_emails
+from app.services.utils import normalize_phone, contains_restricted_emails, mask_pii
 from app.services.fsm import state_manager, AppStates
 from app.db.auth import register_id_messenger, check_id_messenger
 from app.db.table_data import fetch_table
@@ -33,7 +33,7 @@ async def cmd_start(message: types.Message):
 
     # Проверяем, есть ли пользователь с таким id_telegram
     has_access, current_role = await check_id_messenger(str(user_id))
-    logger.info(f"Пользователь {user_id} авторизован: {has_access}, роль: {current_role}")
+    logger.debug(f"Пользователь {user_id} авторизован: {has_access}, роль: {current_role}")
 
     if has_access:
         # Получаем данные из FSM
@@ -71,8 +71,8 @@ async def handle_contact(message: types.Message):
     logger.info(
         "Пользователь %s прислал номер: %s (нормализован: %s)",
         user_id,
-        contact.phone_number,
-        normalized_phone
+        mask_pii(contact.phone_number),
+        mask_pii(normalized_phone)
     )
 
     # 1. Регистрируем id_messenger в Seatable
@@ -195,7 +195,7 @@ async def process_back_callback(callback_query: types.CallbackQuery):
     try:
         user_id = callback_query.from_user.id
 
-        logger.info(f"Сработал обычный «Назад» из process_back_callback")
+        logger.debug(f"Сработал обычный «Назад» из process_back_callback")
 
         # Проверяем права доступа и выходим если нет доступа
         has_access = await check_access(callback_query=callback_query)
@@ -253,7 +253,7 @@ async def process_back_callback(callback_query: types.CallbackQuery):
                         parse_mode="HTML"
                     )
             else:
-                logger.info(f"Контент содержит персональные данные, не постим в чат")
+                logger.debug(f"Контент содержит персональные данные, не постим в чат")
 
         # Возвращаемся к предыдущему экрану
         if previous_menu.startswith('content:'):

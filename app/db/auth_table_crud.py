@@ -3,6 +3,7 @@ import logging
 from typing import Dict, List
 
 from app.db.nocodb_client import NocoDBClient
+from app.services.utils import mask_pii
 from config import Config
 
 
@@ -52,10 +53,10 @@ async def create_auth(auth_record: Dict) -> bool:
             )
 
             if result:
-                logger.info(f"Создана запись в авторизационной таблице: {auth_record.get('FIO')}")
+                logger.info(f"Создана запись в авторизационной таблице: {mask_pii(auth_record.get('FIO'))}")
                 return True
             else:
-                logger.error(f"Ошибка создания записи в авторизационной таблице: {auth_record.get('FIO')}")
+                logger.error(f"Ошибка создания записи в авторизационной таблице: {mask_pii(auth_record.get('FIO'))}")
                 return False
 
     except Exception as e:
@@ -75,7 +76,7 @@ async def update_auth(record_id: str, auth_record: Dict) -> bool:
                 data=auth_record
             )
 
-            logger.info(f"Обновлена запись в авторизационной таблице: {record_id}")
+            logger.debug(f"Обновлена запись в авторизационной таблице: {record_id}")
             return True
 
     except Exception as e:

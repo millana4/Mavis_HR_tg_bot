@@ -12,7 +12,7 @@ from app.db.auth_table_crud import read_auth, create_auth, update_auth, delete_a
 from app.db.roles import check_user_roles_daily, UserRole, roles_check_time
 from app.db.table_data import fetch_table
 from app.services.pulse_creator import PulseTaskCreator
-from app.services.utils import normalize_phones_string
+from app.services.utils import normalize_phones_string, mask_pii
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ async def sync_auth():
                                  phone.startswith('+7') and len(re.sub(r'\D', '', phone)) == 11]
 
                 if not mobile_phones:
-                    logger.info(f"Пропускаем {fio} (СНИЛС: {snils}) - нет мобильных телефонов")
+                    logger.debug(f"Пропускаем {mask_pii(fio)} (СНИЛС: {mask_pii(snils)}) - нет мобильных телефонов")
                     skipped_count += 1
                     continue
 
@@ -130,13 +130,13 @@ async def sync_auth():
                             'Role': role.value,
                             'ID_messenger': ''
                         }
-                        logger.debug(f"Создание записи: телефон={phone}, роль={role.value}")
+                        logger.debug(f"Создание записи: телефон={mask_pii(phone)}, роль={role.value}")
                         success = await create_auth(auth_record)
                         if success:
                             created_count += 1
-                    logger.info(f"Созданы {len(mobile_phones)} записи(ей) для {fio}")
+                    logger.info(f"Созданы {len(mobile_phones)} записи(ей) для {mask_pii(fio)}")
                 else:
-                    logger.info(f"Существующий пользователь {fio} (СНИЛС: {snils}) - проверяем обновления")
+                    logger.debug(f"Существующий пользователь {mask_pii(fio)} (СНИЛС: {mask_pii(snils)}) - проверяем обновления")
                     existing_records = auth_users[snils]
 
                     # Обновляем FIO и роль во ВСЕХ существующих записях
@@ -146,22 +146,22 @@ async def sync_auth():
                             records_to_update.append(record)
 
                     if records_to_update:
-                        logger.info(f"Обновляем {len(records_to_update)} записи(ей) для {fio}")
+                        logger.info(f"Обновляем {len(records_to_update)} записи(ей) для {mask_pii(fio)}")
                         for record in records_to_update:
                             logger.debug(
-                                f"Обновление записи FIO={record.get('FIO')}→{fio}, Role={record.get('Role')}→{role.value}")
+                                f"Обновление записи FIO={mask_pii(record.get('FIO'))}→{mask_pii(fio)}, Role={record.get('Role')}→{role.value}")
                             success = await update_auth(record['Id'], {'FIO': fio, 'Role': role.value})
                             if success:
                                 updated_count += 1
                     else:
-                        logger.info(f"Не требуется обновление")
+                        logger.debug(f"Не требуется обновление")
 
                     # Добавляем новые мобильные телефоны
                     existing_phones = {r.get('Phone', '') for r in existing_records}
 
                     new_phones = [phone for phone in mobile_phones if phone and phone not in existing_phones]
                     if new_phones:
-                        logger.info(f"Добавляем {len(new_phones)} новых телефонов для {fio}")
+                        logger.info(f"Добавляем {len(new_phones)} новых телефонов для {mask_pii(fio)}")
                         for phone in new_phones:
                             auth_record = {
                                 'SNILS': snils,
@@ -170,7 +170,7 @@ async def sync_auth():
                                 'Role': role.value,
                                 'ID_messenger': ''
                             }
-                            logger.info(f"Создание новой записи с телефоном: {phone}")
+                            logger.debug(f"Создание новой записи с телефоном: {mask_pii(phone)}")
                             success = await create_auth(auth_record)
                             if success:
                                 created_count += 1
@@ -179,18 +179,19 @@ async def sync_auth():
                 if date_employment:
                     seven_days_ago = datetime.now().date() - relativedelta(days=7)
                     if date_employment > seven_days_ago:
-                        logger.info(f"Работает меньше недели - создаём пульс-опросы для {pivot_user.get('FIO')}")
+                        logger.info(f"Работает меньше недели - создаём пульс-опросы для {mask_pii(pivot_user.get('FIO'))}")
                         creator = PulseTaskCreator()
                         created = await creator.create_tasks(pivot_user)
                         if created:
-                            logger.info(f"Созданы пульс-опросы для {pivot_user.get('FIO')}")
+                            logger.info(f"Созданы пульс-опросы для {mask_pii(pivot_user.get('FIO'))}")
                         else:
-                            logger.info(f"Пульс-опросы не требуются для {pivot_user.get('FIO')}")
+                            logger.debug(f"Пульс-опросы не требуются для {mask_pii(pivot_user.get('FIO'))}")
 
 
             except Exception as e:
-                logger.error(f"Ошибка обработки пользователя {snils} ({pivot_user.get('FIO', 'нет ФИО')}): {e}",
-                             exc_info=True)
+                logger.error(
+                    f"Ошибка обработки пользователя {mask_pii(snils)} ({mask_pii(pivot_user.get('FIO', 'нет ФИО'))}): {e}",
+                    exc_info=True)
 
         # Удаляем записи архивных пользователей
         auth_users_updated = await read_auth()
@@ -200,13 +201,14 @@ async def sync_auth():
             if snils in auth_users_updated:
                 try:
                     records_to_delete = auth_users_updated[snils]
-                    logger.info(f"Удаление {len(records_to_delete)} записей архивного пользователя: СНИЛС={snils}")
+                    logger.info(f"Удаление {len(records_to_delete)} записей архивного пользователя: СНИЛС={mask_pii(snils)}")
+
                     for record in records_to_delete:
                         success = await delete_auth(record['Id'])
                         if success:
                             deleted_count += 1
                 except Exception as e:
-                    logger.error(f"Ошибка удаления архивного пользователя {snils}: {e}", exc_info=True)
+                    logger.error(f"Ошибка удаления архивного пользователя {mask_pii(snils)}: {e}", exc_info=True)
 
         logger.info("Синхронизация авторизации завершена")
         logger.info(f"ИТОГО: создано={created_count}, обновлено={updated_count}, удалено={deleted_count}, пропущено={skipped_count}")

@@ -27,7 +27,7 @@ async def is_user_admin(user_id: int) -> bool:
         )
 
         if not target_user:
-            logger.info(f"User {user_id} not found in users table")
+            logger.debug(f"User {user_id} not found in users table")
             return False
 
         # 4. Проверяем всех админов
@@ -42,10 +42,10 @@ async def is_user_admin(user_id: int) -> bool:
                 if (admin.get('Content+broadcast_admin') or
                         admin.get('Pulse_admin') or
                         admin.get('Feedback_admin')):
-                    logger.info(f"Admin check SUCCESS: user_id={user_id}")
+                    logger.debug(f"Admin check SUCCESS: user_id={user_id}")
                     return True
 
-        logger.info(f"Admin check FAILED: user_id={user_id} not found in any admin list")
+        logger.debug(f"Admin check FAILED: user_id={user_id} not found in any admin list")
         return False
 
     except Exception as e:

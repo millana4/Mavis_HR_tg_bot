@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.db.sync_1c import start_sync_scheduler
 from app.services.fsm import state_manager
@@ -21,7 +22,9 @@ async def main():
     logger.info("Запуск бота...")
 
     # Инициализация бота и диспетчера
-    bot = Bot(token=Config.BOT_TOKEN)
+    # Для дебага запускается через прокси
+    session = AiohttpSession(proxy=Config.BOT_PROXY) if Config.BOT_PROXY else AiohttpSession()
+    bot = Bot(token=Config.BOT_TOKEN, session=session)
     dp = Dispatcher()
 
     # Планировщик синхронизации таблицы авторизации + рассылки пульс-опросов

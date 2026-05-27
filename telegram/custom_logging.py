@@ -3,6 +3,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from aiogram.types import Update
 
+from config import Config
+
 
 class UserLoggingMiddleware:
     def __init__(self):
@@ -34,13 +36,16 @@ class UserIdFilter(logging.Filter):
 
 def setup_logging():
     """Настройка логирования для всего проекта"""
-    # Создаем папку для логов
-    log_dir = Path("../logs")
+    # Создаем папку для логов от корня проекта
+    project_root = Path(__file__).resolve().parent.parent
+    log_dir = project_root / "logs"
     log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / "bot.log"
 
-    # Основные настройки
+    # Основные настройки — уровень из переменной окружения LOG_LEVEL
+    log_level = getattr(logging, Config.LOG_LEVEL.upper(), logging.INFO)
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger.setLevel(log_level)
 
     # Формат логов
     formatter = logging.Formatter(
@@ -52,13 +57,24 @@ def setup_logging():
 
     # Файловый обработчик
     file_handler = RotatingFileHandler(
-        '../logs/bot.log',
+        log_file,
         maxBytes=10 * 1024 * 1024,
         backupCount=3,
-        encoding='utf-8'
+        encoding='utf-8',
+        delay=False,  # открыть файл сразу, не лениво
     )
     file_handler.setFormatter(formatter)
     file_handler.addFilter(user_filter)
+
+    # Отключаем буферизацию: flush после каждой записи
+    _orig_emit = file_handler.emit
+    def _emit_and_flush(record):
+        _orig_emit(record)
+        try:
+            file_handler.flush()
+        except Exception:
+            pass
+    file_handler.emit = _emit_and_flush
 
     # Консольный обработчик
     console_handler = logging.StreamHandler()

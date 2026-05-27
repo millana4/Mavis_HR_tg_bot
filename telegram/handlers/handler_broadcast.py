@@ -522,7 +522,7 @@ async def send_broadcast_to_all_users(notification: Dict, bot: Bot) -> bool:
                 # Отправляем контент
                 await send_telegram_content(user_id, content, bot, keyboard)
 
-                logger.info(f"Отправлено пользователю {user_id}")
+                logger.debug(f"Отправлено пользователю {user_id}")
                 success_count += 1
 
             except Exception as e:

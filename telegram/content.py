@@ -81,9 +81,9 @@ async def process_content_part(table_data: List[Dict]) -> Dict:
             # Если и текст и картинка пустые - ставим символ пальца
             if not content_text and not content_image:
                 content_text = "👉"
-                logger.info("Контент пустой, установлен символ пальца")
+                logger.debug("Контент пустой, установлен символ пальца")
 
-            logger.info(
+            logger.debug(
                 f"Найдена строка с контентом (Info). Content_text: {content_text[:20] if content_text else 'пусто'}...")
             return prepare_telegram_message(content_text, content_image)
 

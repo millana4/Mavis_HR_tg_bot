@@ -43,11 +43,11 @@ async def set_main_menu(bot: Bot):
                     if await is_user_admin(int(user_id)):
                         # Устанавливаем админские команды
                         await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=int(user_id)))
-                        logger.info(f"Admin commands set for user {user_id}")
+                        logger.debug(f"Admin commands set for user {user_id}")
                     else:
                         # Устанавливаем обычные команды для не-админов
                         await bot.set_my_commands(user_commands, scope=BotCommandScopeChat(chat_id=int(user_id)))
-                        logger.info(f"User commands set for user {user_id}")
+                        logger.debug(f"User commands set for user {user_id}")
                 except Exception as e:
                     logger.error(f"Error setting commands for {user_id}: {e}")
 
@@ -66,10 +66,10 @@ async def update_user_commands(bot: Bot, user_id: int):
 
         if is_admin:
             await bot.set_my_commands(admin_commands, scope=BotCommandScopeChat(chat_id=user_id))
-            logger.info(f"Admin commands updated for user {user_id}")
+            logger.debug(f"Admin commands updated for user {user_id}")
         else:
             await bot.set_my_commands(user_commands, scope=BotCommandScopeChat(chat_id=user_id))
-            logger.info(f"User commands updated for user {user_id}")
+            logger.debug(f"User commands updated for user {user_id}")
 
     except Exception as e:
         logger.error(f"Error updating commands for user {user_id}: {e}")

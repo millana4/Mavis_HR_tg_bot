@@ -177,3 +177,19 @@ def contains_restricted_emails(text: str) -> bool:
 
     return len(matches) > 0
 
+
+def mask_pii(value, visible: int = 3) -> str:
+    """
+    Маскирует персональные данные: оставляет первые `visible` символов,
+    остальное заменяет звёздочками. Безопасна для None/нестроковых типов.
+    Примеры:
+        mask_pii("Иванов Иван Иванович") -> "Ива*****************"
+        mask_pii("12345678901") -> "123********"
+        mask_pii(None) -> "***"
+    """
+    if value is None:
+        return "***"
+    s = str(value)
+    if len(s) <= visible:
+        return "*" * len(s) if s else "***"
+    return s[:visible] + "*" * (len(s) - visible)

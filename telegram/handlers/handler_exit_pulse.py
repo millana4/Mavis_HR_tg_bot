@@ -10,6 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from app.db.table_data import fetch_table
 from config import Config
 from app.services.broadcast import is_user_admin
+from app.services.utils import mask_pii
 from telegram.handlers.handler_base import start_navigation
 from telegram.content import prepare_telegram_message
 
@@ -63,7 +64,7 @@ async def search_users_by_fio(search_query: str) -> List[Dict]:
                 if f"{w1} {w2}" in fio or f"{w2} {w1}" in fio:
                     results.append(user)
 
-        logger.info(f"По запросу '{search_query}' найдено {len(results)} пользователей")
+        logger.debug(f"По запросу '{mask_pii(search_query)}' найдено {len(results)} пользователей")
         return results
 
     except Exception as e:
@@ -126,7 +127,7 @@ async def send_leaving_poll(user_id: int, fio: str, bot) -> bool:
             logger.error("Пустой контент для опроса 'leaving'")
             return False
 
-        logger.info(f"Пульс-опрос при увольнении отправлен пользователю {user_id} ({fio})")
+        logger.info(f"Пульс-опрос при увольнении отправлен пользователю {user_id} ({mask_pii(fio)})")
         return True
 
     except Exception as send_error:

@@ -8,6 +8,7 @@ from config import Config
 from app.db.table_data import fetch_table
 from app.db.nocodb_client import NocoDBClient
 from app.db.auth_table_crud import update_auth
+from app.services.utils import mask_pii
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class RoleChecker:
 
             user = users[0]
             role = user.get('Role')
-            logger.info(f"Найден пользователь: {user.get('FIO')}, его роль: {role}")
+            logger.debug(f"Найден пользователь: {mask_pii(user.get('FIO'))}, его роль: {role}")
             return role
 
         except Exception as e:
@@ -122,9 +123,9 @@ class RoleChecker:
                         success = await update_auth(user.get('Id'), update_data)
                         updated_count += 1
                         if success:
-                            logger.info(f"Роль пользователя {user.get('FIO')} изменилась: employee ")
+                            logger.info(f"Роль пользователя {mask_pii(user.get('FIO'))} изменилась: employee ")
                 except Exception as e:
-                    logger.error(f"Ошибка проверки пользователя {user.get('FIO')}: {e}")
+                    logger.error(f"Ошибка проверки пользователя {mask_pii(user.get('FIO'))}: {e}")
 
             logger.info(f"Проверка ролей завершена. Обновлено: {updated_count}/{len(newcomer_users)}")
 
@@ -196,7 +197,7 @@ class RoleChecker:
         """
         user_snils = user.get('SNILS')
         if not user_snils:
-            logger.warning(f"У пользователя нет СНИЛС: {user.get('FIO')}")
+            logger.warning(f"У пользователя нет СНИЛС: {mask_pii(user.get('FIO'))}")
             return False
 
         # Ищем пользователя в сводной таблице
@@ -207,7 +208,7 @@ class RoleChecker:
                 break
 
         if not user_1c:
-            logger.warning(f"Пользователь не найден в сводной таблице: {user.get('FIO')} ({user_snils})")
+            logger.warning(f"Пользователь не найден в сводной таблице: {mask_pii(user.get('FIO'))} ({mask_pii(user_snils)})")
             return False
 
         # Получаем дату устройства из сводной таблицы пользователей

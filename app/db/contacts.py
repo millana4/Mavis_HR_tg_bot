@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 from collections import defaultdict
 
 from app.db.nocodb_client import NocoDBClient
+from app.services.utils import mask_pii
 
 
 logger = logging.getLogger(__name__)
@@ -244,7 +245,7 @@ async def give_employee_data(search_type: str, search_query: str, employees: Lis
                 if f"{w1} {w2}" in dept_lower or f"{w2} {w1}" in dept_lower:
                     results.append(emp)
 
-    logger.info(f"По запросу '{search_query}' (сегмент: {selected_segment}) найдено {len(results)} сотрудник(ов)")
+    logger.debug(f"По запросу '{mask_pii(search_query)}' (сегмент: {selected_segment}) найдено {len(results)} сотрудник(ов)")
     return results
 
 async def format_ats_internal(searched_employees_raw: List[Dict]) -> List[Dict]:
@@ -252,7 +253,7 @@ async def format_ats_internal(searched_employees_raw: List[Dict]) -> List[Dict]:
         Группирует записи АТС по ФИО, объединяет только те записи, у которых
         Prefix и Number_direct одинаковые (или оба null).
         """
-    logger.info(f"Группировка записей из спраочника АТС по ФИО")
+    logger.debug(f"Группировка записей из спраочника АТС по ФИО")
 
     # Сначала группируем по ФИО
     by_fio = defaultdict(list)
@@ -375,7 +376,7 @@ async def give_unit_data(search_query: str, unit_data: List[Dict]) -> List[Dict]
             if f"{w1} {w2}" in title_norm or f"{w2} {w1}" in title_norm:
                 results.append(unit)
 
-    logger.info(f"По запросу '{search_query}' найдено {len(results)} сотрудник(ов)")
+    logger.debug(f"По запросу '{mask_pii(search_query)}' найдено {len(results)} сотрудник(ов)")
     return results
 
 

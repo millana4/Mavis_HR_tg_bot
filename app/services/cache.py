@@ -30,7 +30,7 @@ async def get_user_access_and_role(user_id: int) -> tuple[bool, str | None]:
 
     # 3. cache save
     auth_cache[user_id] = role
-    logger.info("Auth cached: %s -> %s", user_id, role)
+    logger.debug("Auth cached: %s -> %s", user_id, role)
 
     return True, role
 

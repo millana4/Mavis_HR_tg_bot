@@ -36,7 +36,7 @@ async def handle_table_menu(table_id: str, user_id: str, message: Message = None
     # Ветвление — обрабатывается форма или обычное меню
     if is_form(table_data):
 
-        logger.info(f"Таблица {table_id} идентифицирована как форма")
+        logger.debug(f"Таблица {table_id} идентифицирована как форма")
         if message:
             return await process_form(table_data, message)
         else:
@@ -256,7 +256,7 @@ async def handle_content_button(table_id: str, row_id: str, should_post_back: bo
         logger.error(f"Строка с row_id={row_id} не найдена в таблице {table_id}")
         return {"text": "Контент не найден"}, None
 
-    logger.info(f"Найдена строка контента: {row.get('Id', 'Без ID')}")
+    logger.debug(f"Найдена строка контента: {row.get('Id', 'Без ID')}")
 
     # Подготавливаем контент
     content = {}
@@ -265,14 +265,14 @@ async def handle_content_button(table_id: str, row_id: str, should_post_back: bo
             text_content=row.get('Content_text', ''),
             image_url=row.get('Content_image')
         ))
-        logger.info("Контент подготовлен")
+        logger.debug("Контент подготовлен")
 
         # Проверяем наличие email с доменами .ru
         if not should_post_back:
             content_text = content.get('text', '')
             if contains_restricted_emails(content_text):
                 # Если содержит персональные данные и это возврат назад - не постим
-                logger.info("Контент содержит персональные данные, не постим в чат при возврате назад")
+                logger.debug("Контент содержит персональные данные, не постим в чат при возврате назад")
                 content = {'text': ''}  # Пустой контент
 
     # Создаем клавиатуру "Назад" (теперь без параметров)
@@ -282,6 +282,6 @@ async def handle_content_button(table_id: str, row_id: str, should_post_back: bo
             callback_data="back"
         )
     ]])
-    logger.info("Создана клавиатура 'Назад'")
+    logger.debug("Создана клавиатура 'Назад'")
 
     return content, keyboard

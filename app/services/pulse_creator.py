@@ -5,6 +5,7 @@ from typing import Dict, List, Optional, Tuple
 
 from config import Config
 from app.db.nocodb_client import NocoDBClient
+from app.services.utils import mask_pii
 
 
 logger = logging.getLogger(__name__)
@@ -107,14 +108,14 @@ class PulseTaskCreator:
             # Парсим дату устройства
             employment_date = self._parse_date(user_data.get('Date_employment'))
             if not employment_date:
-                logger.warning(f"Нет даты устройства для пользователя {user_data.get('FIO')}")
+                logger.warning(f"Нет даты устройства для пользователя {mask_pii(user_data.get('FIO'))}")
                 return False
 
             # Определяем, какие опросы нужны
             needed_polls = self._get_needed_polls(employment_date)
 
             if not needed_polls:
-                logger.info(f"Нет опросов для пользователя {user_data.get('FIO')}")
+                logger.debug(f"Нет опросов для пользователя {mask_pii(user_data.get('FIO'))}")
                 return True  # Это нормально - просто нет опросов
 
             # Создаем задачи для каждого опроса
@@ -125,9 +126,9 @@ class PulseTaskCreator:
                     if success:
                         success_count += 1
                 except Exception as e:
-                    logger.error(f"Ошибка создания задачи {poll_type} для {user_data.get('FIO')}: {e}")
+                    logger.error(f"Ошибка создания задачи {poll_type} для {mask_pii(user_data.get('FIO'))}: {e}")
 
-            logger.info(f"Создано {success_count}/{len(needed_polls)} задач для {user_data.get('FIO')}")
+            logger.info(f"Создано {success_count}/{len(needed_polls)} задач для {mask_pii(user_data.get('FIO'))}")
             return success_count > 0
 
         except Exception as e:
@@ -187,7 +188,7 @@ class PulseTaskCreator:
         was_adjusted = original_date != adjusted_date
 
         if was_adjusted:
-            logger.info(f"Дата опроса скорректирована: {original_date} -> {adjusted_date}")
+            logger.debug(f"Дата опроса скорректирована: {original_date} -> {adjusted_date}")
 
         return adjusted_date, was_adjusted
 
@@ -210,7 +211,7 @@ class PulseTaskCreator:
                 exists = len(tasks) > 0
 
                 if exists:
-                    logger.info(f"Задача уже существует: {snils} - {poll_type}")
+                    logger.debug(f"Задача уже существует: {mask_pii(snils)} - {poll_type}")
 
                 return exists
 
@@ -226,7 +227,7 @@ class PulseTaskCreator:
         # Проверяем, не существует ли уже такая задача
         snils = user_data.get('SNILS')
         if await self.task_exists(snils, poll_type):
-            logger.info(f"Задача уже существует, пропускаем: {snils} - {poll_type}")
+            logger.debug(f"Задача уже существует, пропускаем: {mask_pii(snils)} - {poll_type}")
             return True  # Считаем успехом, т.к. задача уже есть
 
         # Рассчитываем и корректируем дату опроса
@@ -260,18 +261,18 @@ class PulseTaskCreator:
                 async with NocoDBClient() as client:
                     result = await client.create_record(table_id=Config.PULSE_TASKS_ID, data=task_data)
                     if result:
-                        logger.info(f"Задача на пульс-опрос создана: {task_data.get('FIO')} - {task_data.get('Type')}")
+                        logger.info(f"Задача на пульс-опрос создана: {mask_pii(task_data.get('FIO'))} - {task_data.get('Type')}")
                         return True
                     else:
-                        logger.error(f"Ошибка создания задачи: {task_data.get('FIO')} - {task_data.get('Type')}")
+                        logger.error(f"Ошибка создания задачи: {mask_pii(task_data.get('FIO'))} - {task_data.get('Type')}")
                         return False
             except Exception as e:
                 if attempt < max_retries:
                     logger.warning(
-                        f"Попытка {attempt}/{max_retries} не удалась для {snils} - {poll_type}: {e}. Повтор через {retry_delay} сек.")
+                        f"Попытка {attempt}/{max_retries} не удалась для {mask_pii(snils)} - {poll_type}: {e}. Повтор через {retry_delay} сек.")
                     await asyncio.sleep(retry_delay)
                 else:
-                    logger.error(f"Все {max_retries} попыток не удались для {snils} - {poll_type}: {e}")
+                    logger.error(f"Все {max_retries} попыток не удались для {mask_pii(snils)} - {poll_type}: {e}")
                     return False
 
         return False

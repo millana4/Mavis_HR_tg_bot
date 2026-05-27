@@ -4,6 +4,7 @@ from datetime import datetime
 
 from config import Config
 from app.db.nocodb_client import NocoDBClient
+from app.services.utils import mask_pii
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ async def prepare_data_to_post_in_db(form_data: Dict) -> Optional[Dict]:
 
     # Используем answers_table как есть (это уже ID таблицы)
     table_id = form_data['answers_table']
-    logger.info(f"Table ID: {table_id}")
+    logger.debug(f"Table ID: {table_id}")
 
     # Подготавливаем данные
     try:
@@ -121,7 +122,7 @@ async def complete_form(form_state: Dict, user_id: int) -> Dict:
 
 async def save_form_answers(form_data: Dict) -> bool:
     """Сохраняет ответы формы в таблицу ответов NocoDB"""
-    logger.info("Начало сохранения ответов формы")
+    logger.debug("Начало сохранения ответов формы")
 
     try:
         # Получаем данные пользователя по ID_messenger
@@ -150,12 +151,11 @@ async def save_form_answers(form_data: Dict) -> bool:
         row_data = prepared_data['row_data']
         answers_table_id = prepared_data['table_id']
 
-        logger.info(f"Данные для записи: {row_data}")
-        logger.info(f"ID таблицы для записи: {answers_table_id}")  # Добавить эту строку
+        logger.debug(f"ID таблицы для записи: {answers_table_id}")
 
         # Записываем ответы (NocoDB проигнорирует несуществующие колонки)
         async with NocoDBClient() as client:
-            logger.info(f"Отправка данных в таблицу ответов {answers_table_id}")
+            logger.debug(f"Отправка данных в таблицу ответов {answers_table_id}")
             result = await client.create_record(table_id=answers_table_id, data=row_data)
 
             if result:

@@ -6,6 +6,7 @@ from aiogram import Router, types, F, Bot
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from app.db.table_data import fetch_table
+from app.services.utils import mask_pii
 from config import Config
 from app.services.fsm import state_manager, AppStates
 from app.db.contacts import give_employee_data, format_employee_text, give_unit_data, format_unit_text, \
@@ -61,7 +62,7 @@ async def process_contacts_callback(callback_query: types.CallbackQuery):
 
         # Устанавливаем состояние ожидания выбора типа поиска
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_SEARCH_TYPE)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_SEARCH_TYPE}")
+        logger.debug("Установлено состояние: {AppStates.WAITING_FOR_SEARCH_TYPE}")
 
         await callback_query.answer()
 
@@ -100,7 +101,7 @@ async def handle_text_input_during_search_selection(message: Message):
             await message.answer("Пожалуйста, введите ФИО сотрудника:")
             return
 
-        logger.info(f"Автоматический поиск по ФИО: {search_query}")
+        logger.info(f"Автоматический поиск по ФИО: {mask_pii(search_query)}")
 
         # Получаем данные сотрудников
         employees = await fetch_table(table_id=Config.PIVOT_TABLE_ID, app='USER')
@@ -134,7 +135,7 @@ async def handle_name_search(callback_query: types.CallbackQuery):
 
         # Устанавливаем состояние ожидания ввода сегмета
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_SEGMENT_SEARCH)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_SEGMENT_SEARCH}")
+        logger.debug(f"Установлено состояние: {AppStates.WAITING_FOR_SEGMENT_SEARCH}")
 
         await callback_query.answer()
 
@@ -170,8 +171,8 @@ async def handle_name_search(callback_query: types.CallbackQuery):
             selected_segment=segment
         )
 
-        logger.info(f"Пользователь {user_id} выбрал сегмент: {segment}")
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_NAME_SEARCH}")
+        logger.debug(f"Пользователь {user_id} выбрал сегмент: {segment}")
+        logger.debug(f"Установлено состояние: {AppStates.WAITING_FOR_NAME_SEARCH}")
 
         # Просим ввести ФИО
         await callback_query.message.answer(
@@ -212,7 +213,7 @@ async def process_name_input(message: Message):
         if not selected_segment:
             selected_segment = "both"  # по умолчанию ищем во всех
 
-        logger.info(f"Поиск по ФИО: {search_query}, сегмент: {selected_segment}")
+        logger.info(f"Поиск по ФИО: {mask_pii(search_query)}, сегмент: {selected_segment}")
 
         # Обращается по АПИ в таблицу со справочником и возвращает json с данными всех сотрудников
         employees = await fetch_table(table_id=Config.PIVOT_TABLE_ID, app="USER")
@@ -281,7 +282,7 @@ async def show_employee(searched_employees_raw: List[Dict], message: Message, cu
                     reply_markup=keyboard
                 )
             except Exception as e:
-                logger.warning(f"Не удалось отправить фото для {emp.get('FIO')}: {e}")
+                logger.warning(f"Не удалось отправить фото для {mask_pii(emp.get('FIO'))}: {e}")
                 sent_message = await message.answer(
                     text=text,
                     parse_mode="HTML",
@@ -339,7 +340,7 @@ async def show_employee(searched_employees_raw: List[Dict], message: Message, cu
 
     # Ставим таймер, чтобы удалить из истории данные сотрудников
     if sent_message and searched_employees:
-        logger.info(f"Вызываю таймер для сообщения {sent_message.message_id}")
+        logger.debug(f"Вызываю таймер для сообщения {sent_message.message_id}")
         asyncio.create_task(delete_personal_data(bot, chat_id, sent_message.message_id, AUTODELETE_TIMER))
     else:
         logger.warning(
@@ -367,7 +368,7 @@ async def handle_company_group_search(callback_query: types.CallbackQuery):
 
         # Устанавливаем состояние ожидания выбора подразделения
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_COMPANY_GROUP_SEARCH)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_COMPANY_GROUP_SEARCH}")
+        logger.debug(f"Установлено состояние: {AppStates.WAITING_FOR_COMPANY_GROUP_SEARCH}")
 
         await callback_query.answer()
 
@@ -400,7 +401,7 @@ async def handle_department_search(callback_query: types.CallbackQuery):
 
         # Устанавливаем состояние ожидания ввода отдела
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_DEPARTMENT_MAVIS_SEARCH)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_DEPARTMENT_MAVIS_SEARCH}")
+        logger.debug(f"Установлено состояние: {AppStates.WAITING_FOR_DEPARTMENT_MAVIS_SEARCH}")
 
         # Отправляем инлайн-клавиатуру пользователю
         await callback_query.message.answer("Выберите, пожалуйста, отдел:", reply_markup=keyboard)
@@ -436,7 +437,7 @@ async def handle_department_search(callback_query: types.CallbackQuery):
 
         # Устанавливаем состояние ожидания ввода отдела
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_DEPARTMENT_VOTONIA_SEARCH)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_DEPARTMENT_VOTONIA_SEARCH}")
+        logger.debug(f"Установлено состояние: {AppStates.WAITING_FOR_DEPARTMENT_VOTONIA_SEARCH}")
 
         # Отправляем инлайн-клавиатуру пользователю
         await callback_query.message.answer("Выберите, пожалуйста, отдел:", reply_markup=keyboard)
@@ -545,7 +546,7 @@ async def handle_shop_search(callback_query: types.CallbackQuery):
 
         # Устанавливаем состояние ожидания ввода названия магазина
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_SHOP_TITLE_SEARCH)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_SHOP_TITLE_SEARCH}")
+        logger.debug(f"Установлено состояние: {AppStates.WAITING_FOR_SHOP_TITLE_SEARCH}")
 
         await callback_query.answer()
 
@@ -601,7 +602,7 @@ async def handle_drugstore_search(callback_query: types.CallbackQuery):
 
         # Устанавливаем состояние ожидания ввода
         await state_manager.update_data(user_id, current_state=AppStates.WAITING_FOR_DRUGSTORE_TITLE_SEARCH)
-        logger.info(f"Установлено состояние: {AppStates.WAITING_FOR_DRUGSTORE_TITLE_SEARCH}")
+        logger.debug(f"Установлено состояние: {AppStates.WAITING_FOR_DRUGSTORE_TITLE_SEARCH}")
 
         await callback_query.answer()
 
@@ -689,7 +690,7 @@ async def handle_search_back(callback: types.CallbackQuery):
     try:
         user_id = callback.from_user.id
 
-        logger.info(f"Сработал «Назад» к типу поиска handle_search_back")
+        logger.debug(f"Сработал «Назад» к типу поиска handle_search_back")
 
         # Проверяем права доступа и выходим если нет доступа
         has_access = await check_access(callback_query=callback)
@@ -738,7 +739,7 @@ async def handle_department_back(callback: types.CallbackQuery):
     try:
         user_id = callback.from_user.id
 
-        logger.info(f"Сработал «Назад» к типу поиска по подразделениям handle_department_back")
+        logger.debug(f"Сработал «Назад» к типу поиска по подразделениям handle_department_back")
 
         # Проверяем права доступа и выходим если нет доступа
         has_access = await check_access(callback_query=callback)
@@ -780,13 +781,13 @@ async def handle_department_back(callback: types.CallbackQuery):
 async def delete_personal_data(bot: Bot, chat_id: int, message_id: int, delay_seconds: int):
     """Удаляет сообщение через указанное количество секунд"""
     try:
-        logger.info(f"Стартует таймер {delay_seconds} секунд для сообщения с данными сотрудников {message_id}")
+        logger.debug(f"Стартует таймер {delay_seconds} секунд для сообщения с данными сотрудников {message_id}")
         await asyncio.sleep(delay_seconds)
 
         # Пытаемся удалить сообщение с результатами
         try:
             await bot.delete_message(chat_id=chat_id, message_id=message_id)
-            logger.info(f"По таймеру удален контент сообщения {message_id}")
+            logger.debug(f"По таймеру удален контент сообщения {message_id}")
 
             # Обновляем состояние
             await state_manager.update_data(
@@ -802,10 +803,10 @@ async def delete_personal_data(bot: Bot, chat_id: int, message_id: int, delay_se
                 reply_markup=SEARCH_TYPE_KEYBOARD
             )
 
-            logger.info(f"Пользователь {chat_id} возвращен к выбору типа поиска после удаления контента")
+            logger.debug(f"Пользователь {chat_id} возвращен к выбору типа поиска после удаления контента")
 
         except Exception as delete_error:
-            logger.info(f"Сообщение {message_id} уже удалено: {delete_error}")
+            logger.debug(f"Сообщение {message_id} уже удалено: {delete_error}")
 
     except Exception as e:
         logger.error(f"Ошибка удаления сообщения в таймере {message_id}: {e}")

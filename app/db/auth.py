@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from app.db.nocodb_client import NocoDBClient
-from app.services.utils import normalize_phone
+from app.services.utils import normalize_phone, mask_pii
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -26,10 +26,10 @@ async def check_id_messenger(id_messenger: str) -> tuple[bool, str]:
             if users:
                 user = users[0]
                 role = user.get('Role', 'employee')
-                logger.info(f"Найден пользователь с ID_messenger: {id_messenger}, роль: {role}")
+                logger.debug(f"Найден пользователь с ID_messenger: {id_messenger}, роль: {role}")
                 return True, role
 
-            logger.info(f"Пользователь с ID_messenger {id_messenger} не найден")
+            logger.debug(f"Пользователь с ID_messenger {id_messenger} не найден")
             return False, "employee"
 
     except Exception as e:
@@ -63,7 +63,7 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
                                 data={'Phone': normalized}
                             )
                             normalized_count += 1
-                            logger.info(f"Нормализован телефон: {original_phone} -> {normalized}")
+                            logger.info(f"Нормализован телефон: {mask_pii(normalized)}")
 
                 if normalized_count > 0:
                     logger.info(f"Нормализовано {normalized_count} телефонов, повторяем поиск")
@@ -71,7 +71,7 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
                     users = await client.get_all(table_id=Config.AUTH_TABLE_ID, where=phone_filter, limit=1)
 
             if not users:
-                logger.error(f"Совпадений не найдено для телефона {phone}")
+                logger.warning(f"Совпадений не найдено для телефона {mask_pii(phone)}")
                 return False
 
             user = users[0]  # берем первого пользователя из списка, он там один
@@ -81,7 +81,7 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
                 logger.error("У строки нет ID")
                 return False
 
-            logger.info(f"Найдена строка пользователя для обновления (ID: {user_id})")
+            logger.debug(f"Найдена строка пользователя для обновления (ID: {user_id})")
 
             # Проверяем роль: если пусто или None - нужно установить 'employee'
             current_role = user.get("Role")  # получаем роль из записи пользователя
@@ -102,9 +102,9 @@ async def register_id_messenger(phone: str, id_messenger: str) -> bool:
             )
 
             if update_data.get("Role"):
-                logger.info(f"ID_messenger и роль 'employee' успешно добавлены для телефона {phone}")
+                logger.info(f"ID_messenger и роль 'employee' успешно добавлены для телефона {mask_pii(phone)}")
             else:
-                logger.info(f"ID_messenger успешно добавлен для пользователя с телефоном {phone}")
+                logger.info(f"ID_messenger успешно добавлен для пользователя с телефоном {mask_pii(phone)}")
 
             return True
 

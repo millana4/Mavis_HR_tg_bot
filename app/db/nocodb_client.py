@@ -39,7 +39,7 @@ class NocoDBClient:
     async def get_all(self, table_id: str, fields: Optional[List[str]] = None, where: Optional[str] = None,
                       sort: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[Dict]:
         """Получить все записи таблицы"""
-        logger.info(f"Getting records from table {table_id}")
+        logger.debug(f"Getting records from table {table_id}")
         url = f"{self.base_url}/api/v2/tables/{table_id}/records"
 
         params = {"limit": limit, "offset": offset}
@@ -67,13 +67,13 @@ class NocoDBClient:
                 )
                 records.extend(next_records)
 
-        logger.info(f"Retrieved {len(records)} records from table {table_id}")
+        logger.debug(f"Retrieved {len(records)} records from table {table_id}")
         return records
 
     async def get_record(self, table_id: str, record_id: Union[int, str], fields: Optional[List[str]] = None) -> \
     Optional[Dict]:
         """Получить одну запись по ID"""
-        logger.info(f"Getting record {record_id} from table {table_id}")
+        logger.debug(f"Getting record {record_id} from table {table_id}")
         url = f"{self.base_url}/api/v2/tables/{table_id}/records/{record_id}"
         params = {}
         if fields:
@@ -89,7 +89,7 @@ class NocoDBClient:
 
     async def create_record(self, table_id: str, data: Dict[str, Any]) -> List[Dict]:
         """Создать новую запись в таблице"""
-        logger.info(f"Creating record in table {table_id}")
+        logger.debug(f"Creating record in table {table_id}")
         url = f"{self.base_url}/api/v2/tables/{table_id}/records"
         # NocoDB ожидает массив записей для создания
         payload = [data]
@@ -99,20 +99,20 @@ class NocoDBClient:
 
     async def update_record(self, table_id: str, record_id: Union[int, str], data: Dict[str, Any]) -> Dict:
         """Изменить существующую запись"""
-        logger.info(f"Updating record {record_id} in table {table_id}")
+        logger.debug(f"Updating record {record_id} in table {table_id}")
         url = f"{self.base_url}/api/v2/tables/{table_id}/records"
         payload = [{**data, "Id": record_id}]
         response = await self._make_request("PATCH", url, json=payload)
 
         if isinstance(response, list) and len(response) > 0:
-            logger.info(f"Record {record_id} updated successfully")
+            logger.debug(f"Record {record_id} updated successfully")
             return response[0]
-        logger.info(f"Record {record_id} updated")
+        logger.debug(f"Record {record_id} updated")
         return response
 
     async def delete_record(self, table_id: str, record_id: Union[int, str]) -> bool:
         """Удалить запись по ID"""
-        logger.info(f"Deleting record {record_id} from table {table_id}")
+        logger.debug(f"Deleting record {record_id} from table {table_id}")
         url = f"{self.base_url}/api/v2/tables/{table_id}/records"
         payload = [{"Id": record_id}]
         response = await self._make_request("DELETE", url, json=payload)
@@ -120,15 +120,15 @@ class NocoDBClient:
         if isinstance(response, list) and len(response) > 0:
             deleted = response[0].get("Id") == record_id
             if deleted:
-                logger.info(f"Record {record_id} deleted successfully")
+                logger.debug(f"Record {record_id} deleted successfully")
             return deleted
-        logger.info(f"Record {record_id} deletion processed")
+        logger.debug(f"Record {record_id} deletion processed")
         return False
 
     async def create_column(self, table_id: str, column_name: str, column_type: str = "SingleLineText",
                             options: Optional[Dict[str, Any]] = None) -> Dict:
         """Создать новую колонку в таблице"""
-        logger.info(f"Creating column {column_name} in table {table_id}")
+        logger.debug(f"Creating column {column_name} in table {table_id}")
         column_data = {
             "title": column_name,
             "column_name": column_name.lower().replace(" ", "_"),

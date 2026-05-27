@@ -7,6 +7,7 @@ from aiogram import Bot
 from app.db.nocodb_client import NocoDBClient
 from config import Config
 from app.db.table_data import fetch_table
+from app.services.utils import mask_pii
 from telegram.content import prepare_telegram_message
 
 
@@ -46,7 +47,6 @@ class PulseSender:
 
             # Получаем список админов для уведомлений
             admins = await self._get_pulse_admins()
-            logger.info(f"Админы для отправки уведомлений {admins}")
 
             # Отправляем каждую задачу
             sent_tasks = []
@@ -85,10 +85,10 @@ class PulseSender:
             async with NocoDBClient() as client:
                 tasks = await client.get_all(table_id=Config.PULSE_TASKS_ID)
 
-            logger.info(f'Найденны задачи на опросы в таблице.')
+            logger.debug(f'Найдены задачи на опросы в таблице.')
 
             if not tasks:
-                logger.info("Нет задач в таблице пульс-опросов")
+                logger.debug("Нет задач в таблице пульс-опросов")
                 return []
 
             today = datetime.now().date()
@@ -103,7 +103,7 @@ class PulseSender:
                 if (task_date == today_str and task_status == 'waiting'):
                     tasks_for_today.append(task)
 
-            logger.info(f"Найдено задач для отправки сегодня: {len(tasks_for_today)}")
+            logger.debug(f"Найдено задач для отправки сегодня: {len(tasks_for_today)}")
             return tasks_for_today
 
         except Exception as e:
@@ -163,9 +163,9 @@ class PulseSender:
                             'fio': admin.get('FIO', 'Администратор')
                         })
                     else:
-                        logger.warning(f"У админа {admin.get('FIO')} нет ID_messenger")
+                        logger.warning(f"У админа {mask_pii(admin.get('FIO'))} нет ID_messenger")
 
-            logger.info(f"Найдено админов с Pulse_admin - {len(pulse_admins)}: {pulse_admins}")
+            logger.debug(f"Найдено админов с Pulse_admin - {len(pulse_admins)}")
             return pulse_admins
 
         except Exception as e:
@@ -187,23 +187,23 @@ class PulseSender:
                 )
 
                 if not users:
-                    logger.info(f"Пользователь с СНИЛС {snils} не найден")
+                    logger.warning(f"Пользователь с СНИЛС {mask_pii(snils)} не найден")
                     return None
 
                 user = users[0]
                 messenger_id = user.get('ID_messenger')
-                logger.info(f"Найден новичок для отправки {messenger_id}")
+                logger.debug(f"Найден новичок для отправки {messenger_id}")
                 return str(messenger_id) if messenger_id else None
 
         except Exception as e:
-            logger.error(f"Ошибка получения ID_messenger для {snils}: {e}")
+            logger.error(f"Ошибка получения ID_messenger для {mask_pii(snils)}: {e}")
             return None
 
 
     async def _send_single_pulse(self, task: Dict, poll_content: Dict[str, Dict]) -> bool:
         """Отправляет один пульс-опрос пользователю"""
         try:
-            logger.info(f"Начинаем отправку задачи {task.get('Id')}: {task}")
+            logger.debug(f"Начинаем отправку задачи {task.get('Id')}")
 
             snils = task.get('SNILS')
             messenger_id = await self._get_user_messenger_id(snils)
@@ -212,11 +212,11 @@ class PulseSender:
                 logger.warning(f"У пользователя нет ID_messenger для задачи {task.get('_id')}")
                 return False
 
-            logger.info(f"Найден ID_messenger: {messenger_id} для пульс-опроса")
+            logger.debug(f"Найден ID_messenger: {messenger_id} для пульс-опроса")
 
             # Получаем контент опроса
             poll_type = task.get('Type')
-            logger.info(f"Тип опроса: {poll_type}")
+            logger.debug(f"Тип опроса: {poll_type}")
 
             content_item = poll_content.get(poll_type)
 
@@ -230,7 +230,7 @@ class PulseSender:
             image_url = content_item.get('Content_image', None)
             prepared_content = prepare_telegram_message(content_text, image_url)
 
-            logger.info(f"Контент подготовлен: {'есть текст' if prepared_content.get('text') else 'нет текста'}, "
+            logger.debug(f"Контент подготовлен: {'есть текст' if prepared_content.get('text') else 'нет текста'}, "
                         f"{'есть изображение' if prepared_content.get('image_url') else 'нет изображения'}")
 
             # Отправляем сообщение
@@ -314,7 +314,7 @@ class PulseSender:
                     data=update_data
                 )
 
-                logger.info(f"Статус задачи {task_id} обновлен на {status}")
+                logger.debug(f"Статус задачи {task_id} обновлен на {status}")
                 return True
 
         except Exception as e:
@@ -357,7 +357,7 @@ class PulseSender:
                             text=message,
                             parse_mode="HTML"
                         )
-                        logger.info(f"Уведомление отправлено админу {admin.get('fio')} (ID: {telegram_id})")
+                        logger.info(f"Уведомление отправлено админу {mask_pii(admin.get('fio'))} (ID: {telegram_id})")
                     except Exception as e:
                         logger.error(f"Ошибка отправки уведомления админу {telegram_id}: {e}")
                 else:
@@ -407,6 +407,6 @@ async def _wait_until(target_time: time):
     minutes = (wait_seconds % 3600) // 60
 
     logger.info(f"Ждем до {target_time.strftime('%H:%M')} МСК для отправки пульс-опросов")
-    logger.info(f"Осталось {int(hours)} часов {int(minutes)} минут")
+    logger.debug(f"Осталось {int(hours)} часов {int(minutes)} минут")
 
     await asyncio.sleep(wait_seconds)

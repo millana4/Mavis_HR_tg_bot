@@ -69,11 +69,10 @@ class StateManager:
 
             for user_id, state in self._state.items():
                 # Отладка: что сохраняем
-                logger.info(f"Saving user {user_id} state: {state}")
+                logger.debug(f"Saving user {user_id} state: {state}")
 
                 # Сохраняем в JSON
                 state_json = json.dumps(state, ensure_ascii=False)
-                logger.info(f"JSON to save: {state_json}")
 
                 cur.execute(
                     "INSERT INTO user_state (user_id, state_json) VALUES (?, ?)",
@@ -158,7 +157,7 @@ class StateManager:
     async def clear(self, user_id: int):
         if user_id in self._state:
             del self._state[user_id]
-            logger.info("FSM cleared for user %s", user_id)
+            logger.debug("FSM cleared for user %s", user_id)
 
 
     # =========================

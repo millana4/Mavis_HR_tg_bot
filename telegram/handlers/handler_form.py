@@ -15,6 +15,7 @@ from config import Config
 from app.services.forms import start_form_questions, complete_form
 from app.services.fsm import state_manager, AppStates
 from app.services.forms import save_form_answers
+from app.services.utils import mask_pii
 
 from telegram.handlers.filters import FormFilter
 from telegram.utils import check_access
@@ -127,7 +128,7 @@ async def ask_next_question(message: Message, form_data: Dict):
 async def handle_text_answer(message: types.Message):
     """Обрабатывает текстовые ответы в форме обратной связи"""
     user_id = message.chat.id
-    logger.info(f"Обрабатывается текстовый ответ пользователя {user_id} в handle_text_answer")
+    logger.debug(f"Обрабатывается текстовый ответ пользователя {user_id} в handle_text_answer")
 
     # Проверяем состояние через state_manager
     user_data = await state_manager.get_data(user_id)
@@ -181,7 +182,7 @@ async def handle_text_answer(message: types.Message):
 async def handle_form_option(callback: types.CallbackQuery):
     """Обрабатывает выбор варианта в форме"""
     user_id = callback.from_user.id
-    logger.info(f"Обрабатывается выбор варианта пользователя {user_id} в handle_form_option")
+    logger.debug(f"Обрабатывается выбор варианта пользователя {user_id} в handle_form_option")
 
     # Проверяем состояние через state_manager
     user_data = await state_manager.get_data(user_id)
@@ -242,7 +243,7 @@ async def finish_form(message: Message, form_data: Dict):
 
     # Завершаем форму и сохраняем результат
     result = await complete_form(form_data, message.from_user.id)
-    logger.info(f"Форма завершена: {result}")
+    logger.debug(f"Форма завершена: {result}")
 
     # Сохраняем ответы в таблицу
     save_success = await save_form_answers({
@@ -368,7 +369,7 @@ async def notify_feedback_admins(bot, user_id: int, form_data: Dict):
                         text=message_text,
                         parse_mode="HTML"
                     )
-                    logger.info(f"Уведомление отправлено админу {admin.get('fio')} (ID: {telegram_id})")
+                    logger.info(f"Уведомление отправлено админу {mask_pii(admin.get('fio'))} (ID: {telegram_id})")
                 except Exception as e:
                     logger.error(f"Ошибка отправки уведомления админу {telegram_id}: {e}")
 
@@ -380,7 +381,7 @@ async def notify_feedback_admins(bot, user_id: int, form_data: Dict):
 async def handle_form_cancel(callback: types.CallbackQuery):
     """Обрабатывает отмену формы"""
     user_id = callback.from_user.id
-    logger.info(f"Пользователь {user_id} отменил форму")
+    logger.debug(f"Пользователь {user_id} отменил форму")
 
     # Получаем данные пользователя
     user_data = await state_manager.get_data(user_id)

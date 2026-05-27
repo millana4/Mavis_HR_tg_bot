@@ -48,7 +48,7 @@ async def check_access(message: types.Message = None, callback_query: types.Call
                 await start_navigation(message=callback_query.message)
             return False  # Прерываем текущее действие
 
-        logger.info(f"Доступ пользователя {user_id} подтвержден, роль: {role}")
+        logger.debug(f"Доступ пользователя {user_id} подтвержден, роль: {role}")
         return True
 
     elif message:
@@ -82,7 +82,7 @@ async def check_access(message: types.Message = None, callback_query: types.Call
             await start_navigation(message=message)
             return False  # Прерываем текущее действие
 
-        logger.info(f"Доступ пользователя {user_id} подтвержден, роль: {role}")
+        logger.debug(f"Доступ пользователя {user_id} подтвержден, роль: {role}")
         return True
 
     return False

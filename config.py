@@ -27,6 +27,12 @@ class Config:
     PULSE_TASKS_ID = os.getenv("PULSE_TASKS_ID")
     PULSE_CONTENT_ID = os.getenv("PULSE_CONTENT_ID")
 
+    AI_FAQ_TABLE_ID = os.getenv("AI_FAQ_TABLE_ID")
+    FEEDBACK_TABLE_ID = os.getenv("FEEDBACK_TABLE_ID")
+
     LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+    AI_AGENT_URL = os.getenv("AI_AGENT_URL")
+    AI_AGENT_API_KEY = os.getenv("AI_AGENT_API_KEY")
 
 

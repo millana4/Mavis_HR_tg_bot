@@ -48,3 +48,15 @@ BACK_TO_DEPARTMENT_TYPE = InlineKeyboardMarkup(inline_keyboard=[
 BACK_TO_SEGMENT = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="⬅️ Назад", callback_data="segment_back")],
 ])
+
+# Клавиатуры режима ИИ-помощника
+# Клавиатура под текстовым ответом ИИ — только выход в меню.
+AI_GO_BACK_KEYBOARD = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="ai:exit")],
+])
+
+# Клавиатура при suggest_hr_form — написать HR или выйти в меню.
+AI_HR_FORM_KEYBOARD = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="✍️ Написать HR", callback_data="ai:hr_form")],
+    [InlineKeyboardButton(text="⬅️ В главное меню", callback_data="ai:exit")],
+])

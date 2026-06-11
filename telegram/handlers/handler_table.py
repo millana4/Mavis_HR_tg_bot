@@ -80,6 +80,12 @@ async def create_menu_keyboard(table_data: List[Dict], current_table_id: str, us
                     text=section,  # Используем Section как текст кнопки
                     callback_data=f"contacts:{row['Submenu_id']}"
                 )])
+            # Проверяем, это кнопка ИИ-агента
+            elif row.get('Submenu_id') == Config.AI_FAQ_TABLE_ID:
+                inline_keyboard.append([InlineKeyboardButton(
+                    text=section,  # Используем Section как текст кнопки
+                    callback_data="ai:start"
+                )])
             else:
                 inline_keyboard.append([InlineKeyboardButton(
                     text=section,  # Используем Section как текст кнопки

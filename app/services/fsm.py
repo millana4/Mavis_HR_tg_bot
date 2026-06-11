@@ -22,6 +22,7 @@ class AppStates:
     WAITING_FOR_COMPANY_GROUP_SEARCH = "waiting_for_company_group_search"
     WAITING_FOR_SHOP_TITLE_SEARCH = "waiting_for_shop_title_search"
     WAITING_FOR_DRUGSTORE_TITLE_SEARCH = "waiting_for_drugstore_title_search"
+    AI_CONVERSATION = "ai_conversation"
 
 
 class StateManager:

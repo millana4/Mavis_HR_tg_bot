@@ -1,6 +1,10 @@
 import re
+import html
 import logging
 from typing import Optional, List
+
+from app.db.table_data import fetch_table
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -193,3 +197,89 @@ def mask_pii(value, visible: int = 3) -> str:
     if len(s) <= visible:
         return "*" * len(s) if s else "***"
     return s[:visible] + "*" * (len(s) - visible)
+
+
+
+
+
+# [текст](url)
+_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^\s)]+)\)")
+# **жирный**
+_BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+# голый url (после того как markdown-ссылки уже вырезаны в плейсхолдеры)
+_BARE_URL_RE = re.compile(r"(?<!href=\")(?<!\">)(https?://[^\s<]+)")
+
+
+def markdown_to_html(text: str) -> str:
+    """
+    Конвертер ответа ИИ-агента (markdown) в Telegram-HTML.
+
+    Агент отдаёт ответ с markdown-разметкой:
+      - ссылки в виде [текст](url)
+      - жирный в виде **текст**
+      - иногда голые ссылки https://...
+
+    Telegram parse_mode=HTML понимает <b>, <i>, <a href>. Этот конвертер
+    превращает markdown в HTML и экранирует спецсимволы, чтобы парсер не падал.
+    """
+    if not text:
+        return ""
+
+    # Шаг 1. Вынимаем markdown-ссылки в плейсхолдеры ДО экранирования,
+    # чтобы их url/текст не пострадали и не путались с голыми ссылками.
+    links: list[tuple[str, str]] = []
+
+    def _stash_link(m: re.Match) -> str:
+        link_text = m.group(1)
+        url = m.group(2)
+        links.append((link_text, url))
+        return f"\x00LINK{len(links) - 1}\x00"
+
+    text = _LINK_RE.sub(_stash_link, text)
+
+    # Шаг 2. Экранируем HTML-спецсимволы во всём оставшемся тексте.
+    text = html.escape(text, quote=False)
+
+    # Шаг 3. Жирный **...** → <b>...</b>.
+    text = _BOLD_RE.sub(r"<b>\1</b>", text)
+
+    # Шаг 4. Голые ссылки → кликабельные <a>.
+    text = _BARE_URL_RE.sub(r'<a href="\1">\1</a>', text)
+
+    # Шаг 5. Возвращаем markdown-ссылки уже как HTML <a>.
+    def _restore_link(m: re.Match) -> str:
+        idx = int(m.group(1))
+        link_text, url = links[idx]
+        safe_text = html.escape(link_text, quote=False)
+        return f'<a href="{html.escape(url, quote=True)}">{safe_text}</a>'
+
+    text = re.sub(r"\x00LINK(\d+)\x00", _restore_link, text)
+
+    return text
+
+
+async def get_broadcast_admin_ids() -> List[int]:
+    """
+    Вернуть Telegram-id админов с галкой Content+broadcast_admin=True.
+
+    Используется для рассылки служебных алертов от ИИ-агента
+    (например, переключение на запасной провайдер).
+    """
+    try:
+        admins = await fetch_table(table_id=Config.ADMIN_TABLE_ID, app='USER')
+    except Exception as e:
+        logger.error(f"Не удалось получить список админов для алерта: {e}")
+        return []
+
+    ids: List[int] = []
+    for admin in admins:
+        if not admin.get('Content+broadcast_admin'):
+            continue
+        messenger_id = admin.get('ID_messenger')
+        if not messenger_id:
+            continue
+        try:
+            ids.append(int(messenger_id))
+        except (TypeError, ValueError):
+            logger.warning(f"Некорректный ID_messenger у админа: {messenger_id!r}")
+    return ids

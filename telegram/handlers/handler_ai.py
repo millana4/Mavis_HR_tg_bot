@@ -16,15 +16,17 @@
 состояния не перехватывали ввод и не выбивали пользователя из режима ИИ).
 """
 import asyncio
+import base64
 import logging
 from typing import Dict, List
 
 from aiogram import Router, types, F, Bot
-from aiogram.types import Message
+from aiogram.types import Message, BufferedInputFile
 
+from app.services.ai_alerts import send_alert_to_admins
 from config import Config
 from app.services.fsm import state_manager, AppStates
-from app.services.utils import mask_pii
+from app.services.utils import mask_pii, markdown_to_html
 from app.db.table_data import fetch_table
 from app.db.contacts import (
     give_employee_data,
@@ -49,8 +51,8 @@ AI_AUTODELETE_TIMER = 120
 # Приветствие при входе в режим ИИ.
 AI_WELCOME_TEXT = (
     "Вы в режиме ИИ-помощника 🤖\n\n"
-    "Можете искать по корпоративным документам, задать вопрос по базе знаний, "
-    "а также получить контакты сотрудников или подразделений."
+    "Спросите о работе в компании, "
+    "попросите контакты сотрудников или обращайтесь по общим вопросам."
 )
 
 
@@ -166,12 +168,36 @@ async def handle_ai_question(message: Message):
 
 async def _dispatch_agent_response(message: Message, response: Dict):
     """Разобрать ответ агента и выполнить нужное действие."""
+    # Служебный алерт админам (если агент переключился на запасной провайдер
+    # и т.п.). Пользователю не показываем — только рассылаем broadcast-админам.
+    alert = response.get("alert")
+    if alert:
+        await asyncio.create_task(
+            send_alert_to_admins(
+                bot=message.bot,
+                alert_type=alert.get("type", "unknown"),
+                message_text=alert.get("message", ""),
+            )
+        )
+
+    tool_call = extract_tool_call(response)
+
+    # Ответ-картинка (generate_image): декодируем base64 и шлём как фото.
+    if response.get("response_type") == "image":
+        await _send_ai_image(message, response)
+        return
+
     tool_call = extract_tool_call(response)
 
     # Текстовый ответ (search_internal / answer_general).
     if tool_call is None:
         answer = response.get("answer") or "Не удалось сформировать ответ."
-        await message.answer(answer, reply_markup=AI_GO_BACK_KEYBOARD)
+        await message.answer(
+            markdown_to_html(answer),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=AI_GO_BACK_KEYBOARD,
+        )
         return
 
     tool_name = tool_call.get("name")
@@ -276,7 +302,12 @@ async def _ai_suggest_hr_form(message: Message, response: Dict):
         "Не удалось найти ответ на ваш вопрос. "
         "Вы можете обратиться в HR — мы поможем."
     )
-    await message.answer(text, reply_markup=AI_HR_FORM_KEYBOARD)
+    await message.answer(
+        markdown_to_html(text),
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+        reply_markup=AI_HR_FORM_KEYBOARD,
+    )
 
 
 @router.callback_query(F.data == "ai:hr_form")
@@ -366,3 +397,34 @@ async def _delete_ai_personal_data(bot: Bot, chat_id: int, message_id: int):
             logger.debug(f"ИИ-сообщение {message_id} уже удалено: {exc}")
     except Exception as exc:
         logger.error(f"Ошибка таймера удаления ИИ-сообщения {message_id}: {exc}")
+
+
+async def _send_ai_image(message: Message, response: Dict):
+    """Декодировать base64-картинку от агента и отправить пользователю как фото."""
+    image_b64 = response.get("image_base64")
+    if not image_b64:
+        logger.warning("ImageResponse без image_base64 — нечего отправить")
+        await message.answer(
+            "Не удалось сгенерировать изображение. Попробуйте переформулировать запрос.",
+            reply_markup=AI_GO_BACK_KEYBOARD,
+        )
+        return
+
+    try:
+        image_bytes = base64.b64decode(image_b64)
+    except Exception as exc:
+        logger.error(f"Не удалось декодировать base64-картинку: {exc}")
+        await message.answer(
+            "Не удалось обработать изображение. Попробуйте ещё раз.",
+            reply_markup=AI_GO_BACK_KEYBOARD,
+        )
+        return
+
+    caption = (response.get("caption") or "").strip() or None
+    photo = BufferedInputFile(image_bytes, filename="image.jpg")
+
+    await message.answer_photo(
+        photo=photo,
+        caption=caption,
+        reply_markup=AI_GO_BACK_KEYBOARD,
+    )

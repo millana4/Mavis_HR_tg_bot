@@ -55,7 +55,7 @@ async def ask_agent(user_id: int, request_text: str) -> Dict[str, Any]:
     if not Config.AI_AGENT_URL or not Config.AI_AGENT_API_KEY:
         raise AIAgentError("AI_AGENT_URL или AI_AGENT_API_KEY не заданы в конфиге")
 
-    url = f"{Config.AI_AGENT_URL.rstrip('/')}/api/ask"
+    url = f"{Config.AI_AGENT_URL.rstrip('/')}/api/v1/ask"
     correlation_id = str(uuid.uuid4())
     headers = {
         "X-API-Key": Config.AI_AGENT_API_KEY,

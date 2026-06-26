@@ -26,7 +26,7 @@ from aiogram.types import Message, BufferedInputFile
 from app.services.ai_alerts import send_alert_to_admins
 from config import Config
 from app.services.fsm import state_manager, AppStates
-from app.services.utils import mask_pii, markdown_to_html
+from app.services.utils import mask_pii, markdown_to_html, contains_restricted_emails
 from app.db.table_data import fetch_table
 from app.db.contacts import (
     give_employee_data,
@@ -93,16 +93,22 @@ async def ai_start_callback(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "ai:exit")
 async def ai_exit_callback(callback: types.CallbackQuery):
-    """Кнопка «В главное меню» — выход из режима ИИ, сразу рисуем главное меню."""
+    """Кнопка «В главное меню» — выход из режима ИИ, сразу рисуем главное меню.
+
+    Сообщение НЕ удаляем — текст и картинки остаются в истории чата.
+    Сообщения с ПД (контакты) убираются отдельно, по таймеру автоудаления.
+    Убираем только кнопку под текущим сообщением, чтобы её нельзя было нажать
+    повторно после выхода.
+    """
     user_id = callback.from_user.id
 
     has_access = await check_access(callback_query=callback)
     if not has_access:
         return
 
-    # Убираем кнопку у предыдущего сообщения и удаляем его.
+    # Сообщение оставляем в истории. Снимаем только клавиатуру под ним.
     try:
-        await callback.message.delete()
+        await callback.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
 
@@ -192,12 +198,19 @@ async def _dispatch_agent_response(message: Message, response: Dict):
     # Текстовый ответ (search_internal / answer_general).
     if tool_call is None:
         answer = response.get("answer") or "Не удалось сформировать ответ."
-        await message.answer(
+        sent = await message.answer(
             markdown_to_html(answer),
             parse_mode="HTML",
             disable_web_page_preview=True,
             reply_markup=AI_GO_BACK_KEYBOARD,
         )
+        # Если в ответе есть почта (ПД) — вешаем таймер автоудаления,
+        # как для результатов поиска контактов.
+        if contains_restricted_emails(answer):
+            logger.debug("Текстовый ответ содержит почту — ставим таймер автоудаления")
+            await asyncio.create_task(
+                _delete_ai_personal_data(message.bot, message.chat.id, sent.message_id)
+            )
         return
 
     tool_name = tool_call.get("name")
